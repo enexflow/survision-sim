@@ -1,802 +1,886 @@
-Okay, here's a detailed specification document for a Survision Device Simulator. This document aims for clarity and completeness, leaving minimal room for interpretation during implementation.
+## Survision Device Simulator - Specification Document
 
-## Survision Device Simulator: Specification Document
+**Version:** 1.0
+**Date:** October 26, 2023
+**Author:** Gemini
 
-**1. Introduction**
+### 1. Introduction
 
-This document outlines the specifications for a simulator designed to emulate the behavior of a Survision license plate recognition (LPR) device. The simulator will provide the same communication interfaces (HTTP and WebSocket) and a simple web-based UI for basic interaction and status viewing.  The goal is to provide a tool for testing and development of client applications without requiring a physical Survision device.
+This document specifies the requirements for a simulator that emulates a Survision device (Micropak3 or later) used for License Plate Recognition (LPR). The simulator aims to provide a functional equivalent of the real device for testing and development purposes, without requiring access to the actual hardware.  The simulator will expose the same HTTP and Websocket APIs as a real Survision device, enabling developers to build and test integrations against a controlled environment. It will also include a simple web UI for basic interaction and monitoring.
 
-**2. Goals**
+### 2. Goals
 
-*   Emulate core functionalities of a Survision device: LPR, barrier control.
-*   Expose identical HTTP and WebSocket APIs for seamless client integration.
-*   Provide a basic web UI for:
-    *   Manually entering license plates.
-    *   Viewing the barrier status (open/closed).
-    *   Viewing recent LPR events.
-*   Be configurable to simulate different operating scenarios and error conditions.
-*   Support realistic data structures for communication.
+*   **API Compatibility:** Emulate the Survision device's HTTP and Websocket APIs as closely as possible, including message formats and expected behavior.
+*   **Controllable Environment:** Allow users to simulate various scenarios by manually inputting license plates and controlling the device's state.
+*   **Web UI for Basic Interaction:** Provide a simple web UI for basic device control, state monitoring, and manual triggering of events.
+*   **Simplified Configuration:** Offer a mechanism to configure key aspects of the device behavior (e.g., recognition rate, common contexts).
+*   **Reproducibility:** Ensure simulator behavior is consistent and predictable, allowing for reproducible testing.
 
-**3. System Architecture**
+### 3. Architectural Overview
 
 The simulator will consist of the following components:
 
-*   **API Server:** Handles HTTP and WebSocket communication, manages simulated device state, and processes requests.
-*   **LPR Engine (Simulated):**  A software component that simulates the license plate recognition process, responsible for generating simulated LPR data (license plate number, confidence, etc.). It can be manually triggered or run continuously.
-*   **Barrier Controller (Simulated):** Manages the simulated barrier status (open/closed), reacting to commands from the API server or LPR Engine.
-*   **Data Storage:** Holds configuration data, LPR history, and other persistent information.
-*   **Web UI:** Provides a user interface for interaction and status monitoring.
+*   **HTTP Server:** Handles synchronous requests via HTTP POST.
+*   **Websocket Server:** Handles asynchronous communication via Websocket.
+*   **Device Logic:** Emulates the core logic of the Survision device, including plate recognition, state management, and event generation.
+*   **Web UI:** Provides a user interface for interacting with the simulator.
+*   **Configuration Manager:**  Loads and stores simulator configuration.
+*   **Data Store:** Stores the device state (e.g. configuration, historical recognitions)
 
-**4. Functional Requirements**
+### 4. Functional Requirements
 
-**4.1. LPR Engine (Simulated)**
+#### 4.1. Device Logic
 
-*   **Manual Triggering:** The web UI should allow manual triggering of the LPR engine, simulating a single license plate reading attempt.
-*   **Automatic Mode:**  The simulator should have an automatic LPR mode, where it generates random or predefined license plates at a configurable rate (e.g., plates/second).
-*   **Plate Generation:**
-    *   **Random:** Generate license plates following a configurable format (e.g., a combination of letters and numbers, a country context).
-    *   **Predefined:** Use a list of license plates from a configuration file.
-*   **Confidence Level:** Assign a simulated confidence level (0-100) to each generated license plate.
-*   **Context Simulation:** Simulate country context based on a configurable probability distribution.
-*   **Error Simulation:** Introduce errors in plate reading with a configurable probability (e.g., misreading characters).
+The device logic will emulate the following behaviors:
 
-**4.2. Barrier Controller (Simulated)**
+*   **Plate Recognition:**  When prompted (either manually or via trigger), attempt to "recognize" a license plate based on configurable success rate. Recognition results will be based on the manually inputted plate, with some configurable variability (e.g., confidence level). The simulator will also emulate DGPR.
+*   **Database Functionality:** Implement a simplified database that can be manually populated via a specific message. The database enables the device to emit 'database' messages.
+*   **Barrier Control:** Implement barrier state management (open/closed). The state can be controlled manually through the web UI or via specific CDK messages.
+*   **State Management:** Maintain the device state (e.g., locked/unlocked, configuration parameters) and correctly reflect state changes based on API calls.
+*   **Event Generation:** Generate asynchronous messages (e.g., ANPR decisions, DGPR decisions, IO state changes) based on the internal device logic and configurable parameters.  The logic for generating an 'anpr' message should include simulating the 'new', 'decision', 'speed', and 'end' events. The 'decision' event should have configurable reliability.
+*   **Date Emulation:** The simulator needs to be able to produce different dates to properly emulate different states.
 
-*   **Status:** The barrier can be in one of two states: `OPEN` or `CLOSED`.
-*   **Open Command:** An `openBarrier` command received through the API will change the barrier state to `OPEN`.
-*   **Automatic Closure:** A configurable timer will automatically close the barrier after a configurable duration when opened.
-*   **Database Integration (Simulated):** The barrier should simulate integration with a license plate database. If a recognized plate is in the database, the barrier opens automatically (if configured).
+#### 4.2. HTTP Server
 
-**4.3. Web UI**
+*   **Handles Synchronous Requests:** Accepts HTTP POST requests at the `/sync` endpoint.
+*   **JSON Parsing:** Parses the request body as a JSON object representing a CDK message.
+*   **Message Processing:** Processes the received CDK message based on the device logic.
+*   **Response Generation:** Generates a JSON object representing the response CDK message.
+*   **Error Handling:** Returns appropriate HTTP error codes (e.g., 400 Bad Request, 500 Internal Server Error) and corresponding error messages in JSON format for invalid requests.
+*   **Locking Emulation:** Emulates implicit locking and unlocking for each request.
+*   **Password Authentication (Simulated):** If a "Password" header is present in the request, use this as an indication of lock success or failure (see 5.1.5 for details).
 
-*   **License Plate Input:** A text field to manually enter a license plate for simulated recognition.
-*   **Trigger Button:** A button to trigger the simulated LPR engine with the manually entered plate.
-*   **Barrier Status:** A visual indicator showing the current barrier status (e.g., an icon or text).
-*   **Event Log:** A display area showing recent LPR events (timestamp, license plate, confidence, context, and action taken - barrier opened/closed).
-*   **Configuration Options:** Ability to configure:
-    *   Automatic LPR mode (on/off, rate).
-    *   License plate generation method (random/predefined).
-    *   Closure timer duration.
-    *   Database integration (on/off).
-    *   Simulated country context.
-    *   Error probability.
+#### 4.3. Websocket Server
 
-**5. API Specification**
+*   **Handles Asynchronous Communication:**  Accepts Websocket connections at the `/async` endpoint.
+*   **JSON Messaging:** Sends and receives CDK messages as JSON objects.
+*   **Message Filtering:** Filters asynchronous messages based on the active `setEnableStreams` configuration (see 5.2.4).
+*   **Pings:** Pings clients using Websocket ping frames to maintain the connection.
+*   **Date emulation:** The date of the simulator may be changed.
 
-The simulator will expose both HTTP and WebSocket APIs using the JSON-serialized CDK messages.
-All data structures will adhere to the Micropak3 XSD documentation (or a compatible subset).
+#### 4.4. Web UI
 
-**5.1. HTTP API (Synchronous Requests)**
+The web UI will provide the following functionalities:
 
-*   **Endpoint:** `http://<simulator_ip>:<http_port>/sync` (or `https://<simulator_ip>:<https_port>/sync` for HTTPS)
-*   **Method:** `POST`
+*   **Device Status Display:** Display the current status of the simulated device (e.g., IP address, connection state, barrier state, lock status).
+*   **Plate Input:**  Provide a text field for manually entering a license plate.
+*   **Trigger Recognition:**  A button to trigger a license plate recognition event using the entered plate.
+*   **Barrier Control:**  Buttons to open and close the barrier manually.
+*   **Configuration Settings:**
+    *   Recognition Success Rate:  A slider or text field to configure the probability of a successful plate read (percentage).
+    *   Default Context: A dropdown to select the default license plate context (country).
+    *   Plate Reliability: Configurable reliability (0-100).
+*   **Log Display:** Display a log of recent events and messages.
+
+#### 4.5. Configuration Manager
+
+*   **Load Configuration:** Loads initial configuration parameters from a file (e.g., `config.json`).
+*   **Store Configuration:** Stores configuration changes made through the Web UI.
+*   **Default Configuration:** Provides default values for all configuration parameters.
+
+#### 4.6. Data Store
+
+*   **In-Memory Storage:** All data, including the plate database and configuration, will be stored in-memory. This simplifies the simulator and avoids external dependencies. No data persistance is required.
+
+### 5. API Specification
+
+#### 5.1. HTTP API (`/sync` endpoint)
+
+##### 5.1.1. General Request Structure
+
+*   **Method:** POST
 *   **Content-Type:** `application/json`
-*   **Input Data:** JSON-serialized CDK message.  (See section 6 for data structures).
-*   **Output Data:**  JSON-serialized CDK message (answer to the request).
-*   **Error Handling:**
-    *   **HTTP Status Codes:**
-        *   `200 OK`: Request successful. The response body contains the JSON-serialized answer message.
-        *   `400 Bad Request`: Invalid JSON, unknown message type, or message validation failed against the XSD. The response body may contain a JSON-serialized `answer` message with a `failed` status and an `errorText` field.
-        *   `500 Internal Server Error`:  An unexpected error occurred within the simulator. The response body may contain a JSON-serialized `answer` message with a `failed` status and an `errorText` field.
-    *   **CDK Message Errors:**  The `answer` message will have a `status` attribute set to `failed` and an `errorText` attribute providing a description of the error.
+*   **Body:**  A JSON object representing a CDK message (see 5.1.2 for supported messages).
 
-**5.1.1. Supported Synchronous Requests**
-All Client Synchronous Requests, listed in the Micropak3 XSD documentation should be implemented.
-Specific support and behavior for relevant messages are detailed below:
+##### 5.1.2. Supported Messages (CDK Messages)
 
-*   **`getConfig`:** Returns a `config` message representing the current simulated device configuration.
-*   **`getCurrentLog`:** Returns an `anpr` message representing the last simulated recognition event.
-*   **`getDatabase`:** Returns a `database` message representing a predefined list of "approved" license plates.
-*   **`getDate`:** Returns the current simulated date and time (using the simulator's internal clock).
-*   **`getImage`:**  Returns a `image` message containing a placeholder JPEG image.  (The image content doesn't need to be a real LPR image; it can be a simple test pattern).  This simulates retrieving a still image.
-*   **`getInfos`:**  Returns an `infos` message with simulated device information (serial number, firmware version, capabilities).
-*   **`getLog`:** Returns an `anpr` message from a simulated log based on ID.
-*   **`getXSD`:**  Returns an `xsd` message containing a string representing a simplified XSD structure for basic validation testing.  A full, accurate XSD is not required for the core functionality of the simulator.
-*   **`lock`:** Sets a "locked" state in the simulator, returns answer ok if password is correct, or answer error if not.
-*   **`openBarrier`:** Sets the barrier state to "OPEN" and starts the closure timer. Returns an `answer` message with `status="ok"`.
-*   **`resetCounters`**, **`resetEngine`**, **`resetConfig`**: returns an `answer` message with `status="ok"` and has no functional effect on the simulator.
-*   **`setConfig`:** Applies the new config, returning answer ok on success, or answer error on failure.
-*   **`allowSetConfig`, `forbidSetConfig`**: returns an `answer` ok, simulating a permission status on the configuration.
-*   **`reboot`**: returns an `answer` ok, simulates the reboot.
-*   **`editDatabase`:** adds or removes a plate from the internal simulated database, returning `answer` ok on success, `answer` error if failure.
-*   **`eraseDatabase`:** clears the internal simulated database, returns answer ok on success.
-*   **`testFTP`, `testNTP`, `setSecurity`, `update`, `updateWebFirmware`, `setConnectionMode`, `setup`, `getTraces`**: returns `answer` ok and does not perform any actions.
-*   **`triggerOn`:** Starts a trigger session returning a triggerId in the answer.
-*   **`triggerOff`:** Stops a trigger session based on the trigger id.
+The simulator will support a subset of the CDK messages, focused on common use cases. The JSON format for each message is based on the described XML to JSON conversion.
+Note the the base64 encoding for binary message elements such as JPEG.
 
-**5.2. WebSocket API (Asynchronous Communication)**
+**5.1.2.1. `getConfig` (Request)**
 
-*   **Endpoint:** `ws://<simulator_ip>:<http_port>/async` (or `wss://<simulator_ip>:<https_port>/async` for secure connections)
-*   **Protocol:** WebSocket (RFC 6455)
-*   **Data Format:** JSON-serialized CDK messages (UTF-8 encoding).
-*   **Direction:** Bi-directional (Simulator can send and receive messages).
-*   **Keep-Alive:** The simulator should send WebSocket Ping frames periodically (e.g., every 30 seconds) to check the connection. The client should respond with a Pong frame.
+*   **Description:** Requests the simulator configuration.
+*   **Input:**
+    ```json
+    {"getConfig": null}
+    ```
+*   **Output:** (See 5.1.3.1 for `config` message format)
+    *   Success: `config` message.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-**5.2.1 Supported Asynchronous Messages:**
+**5.1.2.2. `getCurrentLog` (Request)**
 
-All Server Asynchronous Messages, listed in the Micropak3 XSD documentation should be implemented.
-Specific support and behavior for relevant messages are detailed below:
-*   **`anpr`:** The simulator will send `anpr` messages based on the simulated LPR engine output.
-    *   The `date` attribute should represent the time of the simulated recognition.
-    *   The `plate` attribute should contain the generated license plate.
-    *   The `reliability` attribute should contain the simulated confidence level.
-    *   The `context` attribute should contain the simulated country context.
-    *   A `jpeg` element with a placeholder image should be included if JPEG image output is enabled.
-*   **`config`, `dgpr`, `infos`, `ioState`, `traces`, `video`**: The simulator can send these messages without functional effect.
-*   **`triggerResult`:** Should send a trigger result after trigger is triggered.
-*   **`setEnableStreams`:**
-    *   The simulator should support `configChanges`, `infoChanges`, and `traces`, in setEnableStreams.
-        When changes are made, it will send these messages in the websocket.
+*   **Description:** Requests the current recognition.
+*   **Input:**
+    ```json
+    {"getCurrentLog": null}
+    ```
+*   **Output:** (See 5.1.3.2 for `anpr` message format)
+    *   Success: `anpr` message.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-**5.2.2. Client Handling:**
+**5.1.2.3. `getDatabase` (Request)**
 
-*   **Receiving setEnableStreams:** the simulator must respond to setEnableStreams, turning on configChanges, infoChanges, and traces.
-*   **Ignoring others messages:** The server will not send any other synchronous message.
+*   **Description:** Requests the list of plates in the internal database.
+*   **Input:**
+    ```json
+    {"getDatabase": null}
+    ```
+*   **Output:** (See 5.1.3.3 for `database` message format)
+    *   Success: `database` message.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-**6. Data Structures (JSON-Serialized CDK Messages)**
+**5.1.2.4. `getDate` (Request)**
 
-Below are examples of data structures for the most relevant CDK messages, represented in JSON format.  These examples are based on the Micropak3 XSD structure. *Note that #text entries are Base64 encoded binary data, which may not be printable.*
+*   **Description:** Requests the current date and time.
+*   **Input:**
+    ```json
+    {"getDate": null}
+    ```
+*   **Output:** (See 5.1.3.4 for `date` message format)
+    *   Success: `date` message.
 
-**6.1. Synchronous Requests**
+**5.1.2.5. `getImage` (Request)**
 
-*   **`getConfig`:**
+*   **Description:** Requests a video stream image from the camera.
+*   **Input:**
 
-```json
-{
-  "getConfig": null
-}
-```
+    ```json
+    {"getImage": { "@type": "jpeg" }} //type will not be validated.
+    ```
+*   **Output:** (See 5.1.3.5 for `image` message format)
+    *   Success: `image` message.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-*   **`getCurrentLog`:**
+**5.1.2.6. `getInfos` (Request)**
 
-```json
-{
-  "getCurrentLog": null
-}
-```
+*   **Description:** Requests the simulator information.
+*   **Input:**
+    ```json
+    {"getInfos": null}
+    ```
+*   **Output:** (See 5.1.3.6 for `infos` message format)
+    *   Success: `infos` message.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-*   **`openBarrier`:**
+**5.1.2.7. `getLog` (Request)**
 
-```json
-{
-  "openBarrier": null
-}
-```
+*   **Description:** Requests the anpr message with a specific ID (or the most recent one).
+*   **Input:**
 
-*   **`lock`:**
+    ```json
+    {"getLog": { "@id": "12345" }}
+    ```
+*   **Output:** (See 5.1.3.2 for `anpr` message format)
+    *   Success: `anpr` message.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-```json
-{
-  "lock": {
-    "@password": "TrustNo1"
-  }
-}
-```
+**5.1.2.8. `getTraces` (Request)**
 
-**6.2. Synchronous Responses**
+*   **Description:** Requests traces.
+*   **Input:**
 
-*   **`answer` (Success):**
+    ```json
+    {"getTraces": null }
+    ```
+*   **Output:** (See 5.1.3.7 for `traces` message format)
+    *   Success: `traces` message.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-```json
-{
-  "answer": {
-    "@status": "ok"
-  }
-}
-```
+**5.1.2.9. `getXSD` (Request)**
 
-*   **`answer` (Failure):**
+*   **Description:** Requests the XSD file. The simulator will simply return a predefined XSD (see appendix).
+*   **Input:**
 
-```json
-{
-  "answer": {
-    "@status": "failed",
-    "@errorText": "Invalid request."
-  }
-}
-```
+    ```json
+    {"getXSD": null }
+    ```
+*   **Output:** (See 5.1.3.8 for `xsd` message format)
+    *   Success: `xsd` message.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-*   **`config`:**
+**5.1.2.10. `openBarrier` (Request)**
 
-```json
-{
-  "config": {
-    "device": {
-      "@name": "Simulator Device",
-      "@installationHeight_cm": "150"
-    },
-    "network": {
-      "interface": {
-        "@dhcp": "true"
-      }
-    },
-  "cameras": {
-        "camera": {
-          "@id": "0",
-          "anpr": {
-            "@direction": "both",
-            "@reemitDecision": "false"
-          }
-        }
-      }
-  }
-}
-```
+*   **Description:** Opens the barrier.
+*   **Input:**
+    ```json
+    {"openBarrier": null}
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText` (e.g., if device is locked).
 
-*   **`image`:**
+**5.1.2.11. `triggerOn` (Request)**
 
-```json
-{
-  "image": {
-    "@date": "1678886400000",
-    "jpeg": {
-      "#text": "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w+r8jAwMDADnZ96ZcI6BFAAAAAElFTkSuQmCC"
-    }
-  }
-}
-```
+*   **Description:** Starts a trigger session.
+*   **Input:**
 
-*   **`infos`:**
+    ```json
+    {"triggerOn": { "@cameraId": "0", "@timeout": "1000" }}
+    ```
+*   **Output:** (See 5.1.3.9 for `triggerAnswer` message format)
+    *   Success: `triggerAnswer` message.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-```json
-{
-  "infos": {
-    "sensor": {
-      "@type": "Simulator",
-      "@firmwareVersion": "1.0",
-      "@serial": "SIM12345",
-      "@macAddress": "00:11:22:33:44:55",
-      "@status": "RUNNING"
-    },
-    "cameras":{
-        "camera": {
-          "@id": "0",
-          "cameraModel": "SIM_CAM_MODEL_1",
-          "size": "640X480"
-        }
-    }
-  }
-}
-```
+**5.1.2.12. `triggerOff` (Request)**
 
-**6.3. Asynchronous Messages**
+*   **Description:** Ends a trigger session.
+*   **Input:**
 
-*   **`anpr`:**
+    ```json
+    {"triggerOff": { "@cameraId": "0"}}
+    ```
+*   **Output:** (See 5.1.3.9 for `triggerAnswer` message format)
+    *   Success: `triggerAnswer` message.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-```json
-{
-  "anpr": {
-    "@date": "1678886400000",
-    "decision": {
-      "@plate": "AB123CD",
-      "@reliability": "95",
-      "@context": "F"
-    }
-  }
-}
-```
+**5.1.2.13. `lock` (Request)**
 
-*   **`triggerResult`**:
+*   **Description:** Locks the device.  The simulator will only support locking and not persistant password checking, ie after each restart it is unlocked.
+*   **Input:**
 
-```json
-{
-  "triggerResult": {
-    "@date": "1678886400000",
-    "@triggerId": "42",
-    "decision": {
-      "@plate": "AB123CD",
-      "@reliability": "95",
-      "@context": "F"
-    }
-  }
-}
-```
+    ```json
+    {"lock": { "@password": "password" }}
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-*   **`video`:**
+**5.1.2.14. `unlock` (Request)**
 
-```json
-{
-  "video": {
-    "@cameraId": "0",
-    "@date": "1678886400000",
-    "@key": "true",
-    "@codec": "jpeg",
-    "data": {
-      "#text": "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w+r8jAwMDADnZ96ZcI6BFAAAAAElFTkSuQmCC"
-    }
-  }
-}
-```
+*   **Description:** Unlocks the device.
+*   **Input:**
 
-**7. Error Handling**
+    ```json
+    {"unlock": null }
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-*   **Invalid JSON:** The simulator will reject requests with invalid JSON and return a `400 Bad Request` HTTP status code.
-*   **Message Validation:** The simulator will validate incoming CDK messages against a (simplified) XSD structure.  If the message is invalid, a `400 Bad Request` will be returned with a descriptive error message.
-*   **Simulated Device Errors:** The simulator can be configured to simulate device errors (e.g., camera failure, network connectivity issues).  These errors will be reflected in the `infos` message.
-*   **Barrier Operation Errors:** If an attempt is made to open the barrier when it's already open, a simulated error can be returned.
+**5.1.2.15. `resetConfig` (Request, requires lock)**
 
-**8. Configuration**
+*   **Description:** Resets config to default.
+*   **Input:**
 
-The simulator should be configurable through a configuration file (e.g., JSON, YAML). The configuration should allow setting the following parameters:
+    ```json
+    {"resetConfig": null }
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-*   **HTTP/HTTPS Ports:**  Listening ports for the HTTP and HTTPS API servers.
-*   **LPR Settings:**
-    *   Enable/disable automatic LPR mode.
-    *   Automatic LPR rate (plates/second).
-    *   License plate generation method (random/predefined).
-    *   License plate format (regular expression or pattern).
-    *   Context probabilities (e.g., 80% F, 10% D, 10% Other).
-    *   Error probability (percentage of plates with misread characters).
-*   **Barrier Settings:**
-    *   Automatic closure timer duration (in seconds).
-    *   Database integration (enable/disable).
-    *   "Approved" license plate list (for database lookup).
-*   **Simulator Info**:
-    *  Device type, Firmware version, Serial number.
+**5.1.2.16. `resetEngine` (Request)**
 
-**9. Deployment**
+*   **Description:** Resets recognition engine.
+*   **Input:**
 
-The simulator should be deployable as a standalone application.
+    ```json
+    {"resetEngine": null }
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-**10. Security Considerations**
+**5.1.2.17. `setConfig` (Request, requires lock)**
 
-*   **HTTPS:** Support for HTTPS should be implemented using self-signed certificates for testing.
+*   **Description:** Changes the configuration. In the simulator it may only change the plate reliability using config/cameras/camera/anpr. The config path will be validated.
+*   **Input:**
 
-**11. Technology Considerations (Guidance, not mandatory)**
+    ```json
+    {"setConfig": { "config" : { "cameras" : {"camera" : { "anpr" : {"@plateReliability" : "80"}} } } } }
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
 
-While specific technologies are not mandated, consider:
+**5.1.2.18. `editDatabase` (Request, requires lock)**
 
-*   **API Server:** A framework like Flask (Python), Spring Boot (Java), or Node.js (JavaScript) for easy API development.
-*   **Web UI:** HTML, CSS, JavaScript, and a framework like React, Angular, or Vue.js.
-*   **Data Storage:** In-memory data structures or a simple file-based database (JSON, SQLite) for configuration and LPR history.
+*   **Description:** Edits the plate database. Only one action can be made by message.
+*   **Input:**
 
-**12. Detailed API Data Structures**
-
-The following examples are exhaustive, and include every possible field and possible data type, according to MicroPack3 XSD, but should be treated as a guideline.
-(Note that #text entries are Base64 encoded binary data, which may not be printable.)
-
-*   **Example config Request**
-
-```json
-{
-    "setConfig": {
-        "config": {
-            "device": {
-                "@name": "string",
-                "@installationValidation": "true",
-                "@installationHeight_cm": "12345",
-                "@distanceToDetectionLoop_cm": "12345",
-                "@distanceToBarrier_cm": "12345"
-            },
-            "network": {
-                "interface": {
-                    "@id": "12345",
-                    "@dhcp": "true",
-                    "@ipAddress": "127.0.0.1",
-                    "@ipMask": "255.255.255.0",
-                    "@ipGateway": "127.0.0.1"
-                },
-                "interfaceVLAN1": {
-                    "@enable": "true",
-                    "@idVLAN": "1234",
-                    "@ipAddress": "127.0.0.1",
-                    "@ipMask": "255.255.255.0",
-                    "@ipGateway": "127.0.0.1"
-                },
-                "interfaceVLAN2": {
-                    "@enable": "true",
-                    "@idVLAN": "1234",
-                    "@ipAddress": "127.0.0.1",
-                    "@ipMask": "255.255.255.0",
-                    "@ipGateway": "127.0.0.1"
-                },
-                "routes": {
-                    "@size": "1234",
-                    "route": {
-                        "@id": "1234",
-                        "@destination": "string",
-                        "@interface": "string",
-                        "@gateway": "127.0.0.1"
-                    }
-                },
-                "dns": {
-                    "@dns0": "127.0.0.1",
-                    "@dns1": "127.0.0.1",
-                    "@dns2": "127.0.0.1"
-                },
-                "ntp": {
-                    "@ntp0": "string",
-                    "@ntp1": "string",
-                    "@ntp2": "string"
-                },
-                "clp": {
-                    "@port": "12345",
-                    "@enableUnsecuredConnections": "true",
-                    "@portSsl": "12345"
-                },
-                "rtsp": {
-                    "@port": "12345"
-                },
-                "ftp": {
-                    "@enabled": "true",
-                    "servers": {
-                        "server0": {
-                            "@enabled": "true",
-                            "@address": "string",
-                            "@port": "12345",
-                            "@login": "string",
-                            "@password": "string",
-                            "@protocol": "ftp",
-                            "@retryCount": "1234",
-                            "@retryDelay_ms": "1234",
-                            "@fileName": "string",
-                            "@exportContext": "true",
-                            "@contextFileName": "string"
-                        },
-                        "server1": {
-                            "@enabled": "true",
-                            "@address": "string",
-                            "@port": "12345",
-                            "@login": "string",
-                            "@password": "string",
-                            "@protocol": "ftp",
-                            "@retryCount": "1234",
-                            "@retryDelay_ms": "1234",
-                            "@fileName": "string",
-                            "@exportContext": "true",
-                            "@contextFileName": "string"
-                        },
-                        "server2": {
-                            "@enabled": "true",
-                            "@address": "string",
-                            "@port": "12345",
-                            "@login": "string",
-                            "@password": "string",
-                            "@protocol": "ftp",
-                            "@retryCount": "1234",
-                            "@retryDelay_ms": "1234",
-                            "@fileName": "string",
-                            "@exportContext": "true",
-                            "@contextFileName": "string"
-                        },
-                        "server3": {
-                            "@enabled": "true",
-                            "@address": "string",
-                            "@port": "12345",
-                            "@login": "string",
-                            "@password": "string",
-                            "@protocol": "ftp",
-                            "@retryCount": "1234",
-                            "@retryDelay_ms": "1234",
-                            "@fileName": "string",
-                            "@exportContext": "true",
-                            "@contextFileName": "string"
-                        }
-                    }
-                },
-                "ssws": {
-                    "@enableHttp": "true",
-                    "@httpPort": "12345",
-                    "@enableHttps": "true",
-                    "@httpsPort": "12345"
-                },
-                "protocols": {
-                    "nedapGenericBadge": {
-                        "@enabled": "true",
-                        "@address": "string",
-                        "@port": "12345",
-                        "@maxRetry": "1234"
-                    },
-                    "moobyl": {
-                        "@enabled": "true",
-                        "@zone": "string"
-                    },
-                    "SBFreeFlow": {
-                        "@enabled": "true",
-                        "@url": "string",
-                        "@username": "string",
-                        "@password": "string"
-                    },
-                    "amanoOne": {
-                        "@enabled": "true",
-                        "@url": "string",
-                        "@username": "string",
-                        "@password": "string",
-                        "@ignoreSSLErrors": "true"
-                    },
-                    "tiba": {
-                        "@enabled": "true",
-                        "@url": "string",
-                        "@username": "string",
-                        "@password": "string",
-                        "@guid": "string",
-                        "@laneId": "1234",
-                        "@ignoreSSLErrors": "true"
-                    },
-                    "httpPush": {
-                        "servers": {
-                            "server": {
-                                "@id": "1234",
-                                "@enable": "true",
-                                "@url": "string",
-                                "@filter": "string",
-                                "@timeout": "1234",
-                                "certificate": "string"
-                            }
-                        }
-                    }
-                }
-            },
-            "cameras": {
-                "camera": {
-                    "@id": "1234",
-                    "anpr": {
-                        "@squarePlates": "true",
-                        "@reemitDecision": "true",
-                        "@reemitDecisionTimeout": "1234",
-                        "@context": "string",
-                        "@direction": "both",
-                        "@duplicateFilter": "true",
-                        "@trailerPlates": "true",
-                        "@counting": "true",
-                        "@vehicleDetection": "true",
-                        "@recognitionStorage": "true",
-                        "avar": {
-                            "@enabled": "true",
-                            "@timeout_ms": "1234",
-                            "sensors": {
-                                "sensor0": {
-                                    "@address": "string",
-                                    "@port": "12345",
-                                    "@useSecuredConnection": "true",
-                                    "@ignoreSSLErrors": "true",
-                                    "@timeout_ms": "1234"
-                                }
-                            }
-                        },
-                        "ocr": {
-                            "@minPlateWidth": "1234",
-                            "@maxPlateWidth": "1234",
-                            "@minPlateHeight": "1234",
-                            "@maxPlateHeight": "1234",
-                            "@zoomPlateWidth": "1234",
-                            "@minReliability": "1234",
-                            "@minReliabilityForCharacters": "1234",
-                            "@minCharWidthStatic": "1234",
-                            "@minPlateWidthStatic8Char": "1234",
-                            "@minRecognitionStatic": "1234",
-                            "@minRecognition": "1234",
-                            "@maxNoPlateBeforeDecision": "1234"
-                        },
-                        "trigger": {
-                            "@reliabilityThreshold": "1234",
-                            "@endPlateTimeout_ms": "1234",
-                            "@activateOnIOIn": "true",
-                            "@triggerIOTimeout": "1234",
-                            "@triggerIOPulseMode": "falling"
-                        },
-                        "serial": {
-                            "@export": "off",
-                            "osdp": {
-                                "@address": "1234"
-                            }
-                        }
-                    },
-                    "dgpr": {
-                        "@direction": "both",
-                        "@emptyPlatesDetection": "true",
-                        "@emptyPlatesDetectionRatio": "low",
-                        "@recognitionStorage": "true",
-                        "ocr": {
-                            "@minPlateWidth": "1234",
-                            "@maxPlateWidth": "1234",
-                            "@minPlateHeight": "1234",
-                            "@maxPlateHeight": "1234",
-                            "@zoomPlateWidth": "1234",
-                            "@minReliability": "1234",
-                            "@minReliabilityForCharacters": "1234",
-                            "@minCharWidthStatic": "1234",
-                            "@minPlateWidthStatic8Char": "1234",
-                            "@minRecognitionStatic": "1234",
-                            "@minRecognition": "1234",
-                            "@maxNoPlateBeforeDecision": "1234"
-                        },
-                        "serial": {
-                            "@export": "off",
-                            "osdp": {
-                                "@address": "1234"
-                            }
-                        },
-                        "trigger": {
-                            "@reliabilityThreshold": "1234",
-                            "@endPlateTimeout_ms": "1234",
-                            "@activateOnIOIn": "true",
-                            "@triggerIOTimeout": "1234",
-                            "@triggerIOPulseMode": "falling"
-                        }
-                    },
-                    "speed": {
-                        "@fieldOfViewY_cm": "1234",
-                        "@installationHeight_cm": "1234",
-                        "@installationAngle_degrees": "1234"
-                    },
-                    "areaOfInterest": {
-                        "@enabled": "true",
-                        "@excludingZone": "true",
-                        "point1": {
-                            "@x": "1234",
-                            "@y": "1234"
-                        },
-                        "point2": {
-                            "@x": "1234",
-                            "@y": "1234"
-                        },
-                        "point3": {
-                            "@x": "1234",
-                            "@y": "1234"
-                        },
-                        "point4": {
-                            "@x": "1234",
-                            "@y": "1234"
-                        },
-                        "point5": {
-                            "@x": "1234",
-                            "@y": "1234"
-                        },
-                        "point6": {
-                            "@x": "1234",
-                            "@y": "1234"
-                        }
-                    },
-                    "optics": {
-                        "@zoom": "1234",
-                        "@focus": "1234",
-                        "@focusIRCutOff": "1234",
-                        "@focusIRCutOn": "1234",
-                        "@shutter": "string",
-                        "@brightness": "1234",
-                        "@sharpness": "1234",
-                        "@contrast": "1234",
-                        "@ISO": "string",
-                        "@saturation": "1234",
-                        "@expComp": "1234",
-                        "@exposure": "string",
-                        "@whiteBalance": "string",
-                        "@metering": "string",
-                        "@iris": "string",
-                        "@gain": "string",
-                        "@flip": "true",
-                        "@autofocus": "true",
-                        "@macro": "true",
-                        "@irCutFilter": "on",
-                        "@infoDisplay": "true"
-                    },
-                    "stream": {
-                        "@enabled": "true",
-                        "@codec": "h264",
-                        "@fps": "1234",
-                        "@bitrate": "1234"
-                    },
-                    "enslavement": {
-                        "@enabled": "true",
-                        "@mode": "freeFlow"
-                    },
-                    "stillPicture": {
-                        "@quality": "1234",
-                        "@enabled": "true",
-                        "@plateCropped": "full"
-                    },
-                    "autoExposure": {
-                        "@shutterPriority": "true"
-                    }
-                }
-            },
-            "database": {
-                "@enabled": "true",
-                "@openForAll": "true",
-                "@matchTolerance": "1234"
-            },
-            "io": {
-                "input": {
-                    "@minDuration_ms": "1234"
-                },
-                "defaultImpulse": {
-                    "@pulseMode": "falling",
-                    "@duration_ms": "1234"
-                }
-            },
-            "lightings": {
-                "led": {
-                    "@id": "1234",
-                    "@bracketing": "true",
-                    "@power": "1234",
-                    "@powerLowBracketing": "1234"
-                },
-                "projector": {
-                    "@id": "1234",
-                    "@enabled": "true",
-                    "@synchronizedWithCamera": "1234",
-                    "@bracketing": "true",
-                    "@delay": "1234",
-                    "@delayLowBracketing": "1234"
-                }
-            },
-            "services": {
-                "cst": {
-                    "@enabled": "true",
-                    "@zone": "europe",
-                    "@address": "string",
-                    "@ignoreSSLErrors": "true"
+    ```json
+        {
+            "editDatabase": {
+                "addPlate": {
+                    "@value": "AA123AA"
                 }
             }
         }
+    ```
+
+    ```json
+        {
+            "editDatabase": {
+                "delPlate": {
+                    "@value": "AA123AA"
+                }
+            }
+        }
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
+
+**5.1.2.19. `resetCounters` (Request)**
+
+*   **Description:** resetCounters .
+*   **Input:**
+
+    ```json
+        { "resetCounters": null }
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
+
+**5.1.2.20. `allowSetConfig` (Request, requires lock)**
+
+*   **Description:** allows setConfig .
+*   **Input:**
+
+    ```json
+        { "allowSetConfig": null }
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
+
+**5.1.2.21. `forbidSetConfig` (Request, requires lock)**
+
+*   **Description:** forbids setConfig .
+*   **Input:**
+
+    ```json
+        { "forbidSetConfig": null }
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
+
+**5.1.2.22. `calibrateZoomFocus` (Request, requires lock)**
+
+*   **Description:** calibrates zoom focus .
+*   **Input:**
+
+    ```json
+        { "calibrateZoomFocus": null }
+    ```
+*   **Output:**
+    *   Success: `answer` message with `status` = `"ok"`.
+    *   Failure: `answer` message with `status` = `"failed"` and appropriate `errorText`.
+
+##### 5.1.3. Response Messages (CDK Messages)
+
+**5.1.3.1. `config` (Response)**
+
+*   **Description:** Simulator configuration (subset of the actual Survision device config).
+*   **Output:**
+
+    ```json
+    {
+      "config": {
+        "device": {
+          "@name": "Simulator Device",
+          "@installationHeight_cm": "100"
+        },
+        "network": {
+          "interface": {
+            "@ipAddress": "127.0.0.1",
+            "@ipMask": "255.255.255.0"
+          },
+          "clp": {
+            "@port": "10001"
+          },
+          "ssws": {
+            "@httpPort": "8080"
+          }
+        },
+        "cameras": {
+          "camera": {
+            "anpr": {
+              "@context": "F>OTHERS",
+              "@squarePlates": "0",
+              "@plateReliability": "50"
+            }
+          }
+        },
+        "database": {
+          "@enabled": "0",
+          "@openForAll": "0"
+        },
+        "io":{
+           "defaultImpulse":{
+              "@pulseMode":"rising",
+              "@duration_ms":"500"
+           }
+        }
+      }
     }
-}
+    ```
+
+**5.1.3.2. `anpr` (Response)**
+
+*   **Description:** License plate recognition result.
+*   **Output:**
+
+    ```json
+    {
+      "anpr": {
+        "@date": "1672531200000",
+        "decision": {
+          "@plate": "AA123AA",
+          "@reliability": "80",
+          "@context": "F",
+          "jpeg": "#BASE64_ENCODED_IMAGE_DATA#"
+        }
+      }
+    }
+    ```
+
+**5.1.3.3. `database` (Response)**
+
+*   **Description:** List of plates in the internal database.
+*   **Output:**
+
+    ```json
+    {
+      "database": {
+        "plate": [
+          { "@value": "AA123AA" },
+          { "@value": "BB456BB" }
+        ]
+      }
+    }
+    ```
+
+**5.1.3.4. `date` (Response)**
+
+*   **Description:** Current date and time.
+*   **Output:**
+
+    ```json
+    {
+      "date": {
+        "@date": "1672531200000"
+      }
+    }
+    ```
+
+**5.1.3.5. `image` (Response)**
+
+*   **Description:** Video stream image.
+*   **Output:**
+
+    ```json
+    {
+      "image": {
+        "@date": "1672531200000",
+        "jpeg": "#BASE64_ENCODED_IMAGE_DATA#"
+      }
+    }
+    ```
+
+**5.1.3.6. `infos` (Response)**
+
+*   **Description:** Simulator information.
+*   **Output:**
+
+    ```json
+    {
+      "infos": {
+        "sensor": {
+          "@type": "Simulator",
+          "@firmwareVersion": "1.0",
+          "@serial": "SIM12345",
+          "@macAddress": "00:11:22:33:44:55",
+          "@status": "RUNNING",
+          "@locked": "0"
+        },
+        "cameras": {
+          "camera": {
+            "@id": "0",
+            "enabledAlgorithms": {
+              "anpr": null,
+              "trigger": null
+            }
+          }
+        },
+        "network":{
+            "interfaceWifi":{
+              "@macAddress":"00:22:55:00:aa:cc",
+              "@connected":"0"
+            }
+        },
+        "security":{
+           "@lockPasswordNeeded":"0",
+           "@rsaCrypted":"0"
+        },
+         "anpr":{
+            "@version":"1.0",
+            "@possibleContexts":"F>OTHERS"
+         }
+      }
+    }
+    ```
+
+**5.1.3.7. `traces` (Response)**
+
+*   **Description:** Last traces data.
+*   **Output:**
+    ```json
+    {
+      "traces": {
+        "currentExecution_old": "BASE64_TRACES_OLD",
+        "currentExecution_current": "BASE64_TRACES_NEW"
+      }
+    }
+    ```
+
+**5.1.3.8. `xsd` (Response)**
+
+*   **Description:** XSD definition file.
+*   **Output:**
+    ```json
+    {
+      "xsd": "#BASE64_ENCODED_XSD_DATA#"
+    }
+    ```
+
+**5.1.3.9. `triggerAnswer` (Response)**
+
+*   **Description:** Answer to triggerOn and triggerOff.
+*   **Output:**
+    ```json
+    {
+      "triggerAnswer": {
+        "@status": "ok",
+        "@triggerId": "123"
+      }
+    }
+    ```
+
+**5.1.3.10. `answer` (Response)**
+
+*   **Description:** Standard answer to a client request.
+*   **Output:**
+
+    ```json
+    {
+      "answer": {
+        "@status": "ok"
+      }
+    }
+    ```
+
+    ```json
+    {
+      "answer": {
+        "@status": "failed",
+        "@errorText": "Invalid request"
+      }
+    }
+    ```
+
+##### 5.1.4. Example HTTP Request/Response
+
+**Request:**
+
+```
+POST /sync HTTP/1.1
+Content-Type: application/json
+
+{"getCurrentLog": null}
 ```
 
-*   **Example anpr asynchronous message with all possibilities**
+**Response (Success):**
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"anpr":{"@date":"1672531200000","decision":{"@plate":"AA123AA","@reliability":"80","@context":"F","jpeg":"#BASE64_ENCODED_IMAGE_DATA#"}}}
+```
+
+**Response (Failure):**
+
+```
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+
+{"answer":{"@status":"failed","@errorText":"Invalid request format"}}
+```
+
+##### 5.1.5. Lock Emulation
+
+*   The simulator will maintain a flag indicating whether the device is locked.  The device is initially unlocked on startup.
+*   The `lock` API will change the flag's value to lock or unlock the device.
+*   All requests needing a lock ( marked as *requires lock*) will be checked for the flag state and fail if the device is locked. All other will continue.
+*   If a "Password" header is present, the `lock` API will lock the device only if the password matches a stored password. If there isn't a stored password, the device will be locked regardless of the supplied password. When unlocking the device, the supplied password will be checked against the stored password, but only if there is a stored password, otherwise will unlock.
+
+#### 5.2. Websocket API (`/async` endpoint)
+
+##### 5.2.1. General
+
+*   **Protocol:** Websocket (ws://)
+*   **Message Format:** JSON objects representing CDK messages.
+
+##### 5.2.2. Messages Sent by Simulator (Asynchronous CDK Messages)
+
+The simulator will send the following asynchronous messages:
+
+*   **`anpr`:**  License plate recognition results (see 5.1.3.2 for format). The rate at which these are sent is configurable through the UI, but if a trigerrer session is active, the messages should not be sent.
+*   **`dgpr`:**  DGPR results. The rate at which these are sent is configurable through the UI. The device may have ANPR active, and DGPR disabled and viceversa.
+*   **`ioState`:**  Simulated IO state changes.
+*   **`triggerResult`:** Trigger results which consist of a license plate recognition, with the triggeID .
+*   **`config` :** Sent when the configuration changes using the `setConfig` endpoing.
+*   **`infos` :** Sent when the state changes and the `infoChanges` flag is active.
+*   **`traces`:** Always empty.
+
+##### 5.2.3. Messages Received by Simulator (Asynchronous CDK Messages)
+
+*   **`setEnableStreams`:** Used to subscribe to different streams. (see 5.2.4 for format).
+
+##### 5.2.4. `setEnableStreams` Message Format
+
+*   **Description:**  Enables or disables the transmission of asynchronous events.
+*   **Request:**
+
+    ```json
+    {
+      "setEnableStreams": {
+        "@configChanges": "1",
+        "@infoChanges": "0",
+        "@traces": "0",
+        "cameras": {
+          "camera": {
+            "@id": "0",
+            "@enabled": "0"
+          }
+        }
+      }
+    }
+    ```
+
+    *   `configChanges`:  If set to "1", the simulator will send `config` messages when the configuration changes.
+    *   `infoChanges`:  If set to "1", the simulator will send `infos` messages when the device state changes.
+    *   `traces`: If set to "1", the simulator will attempt to send traces, and will contain no useful data.
+    *   `cameras/camera/@enabled`: Will not be used.
+
+##### 5.2.5. Example Websocket Communication
+
+**Client sends:**
 
 ```json
 {
-    "anpr": {
-        "@date": "123456789",
-        "@session": "1234",
-        "@id": "1234",
-        "new": {
-            "@continue": "true",
-            "@x": "1234",
-            "@y": "1234",
-            "@width": "1234",
-            "@height": "1234",
-            "@sinus": "1234"
-        },
-        "end": {
-            "@x": "1234",
-            "@y": "1234",
-            "@width": "1234",
-            "@height": "1234",
-            "@sinus": "1234",
-            "@plateOccurences": "1234",
-            "@countingTrajectory": "standard"
-        },
-        "decision": {
-            "@plate": "string",
-            "@x": "1234",
-            "@y": "1234",
-            "@xOrigin": "1234",
-            "@yOrigin": "1234",
-            "@width": "1234",
-            "@height": "1234",
-            "@sinus": "1234",
-            "@reliability": "1234",
-            "@direction": "front",
-            "@context": "string",
-            "@context_isoAlpha2": "string",
-            "@context_isoAlpha3": "string",
-            "@plateOccurences": "1234",
-            "@plateFrom": "master",
-            "@plateBackground": "white",
-            "@contrast": "1234",
-            "@squarePlate": "true",
-            "database": {
-                "@plate": "string",
-                "@distance": "1234"
-            },
-            "reliabilityPerCharacter": {
-                "char": {
-                    "@index": "1234",
-                    "@reliability": "1234"
-                }
-            },
-            "jpeg": "string",
-            "contextJpeg": "string"
-        },
-        "speed": {
-            "@instantSpeed_km_h": "1234",
-            "@interdistance_ms": "1234",
-            "@reliability_speed": "1234",
-            "@plateFrom": "master"
-        }
-    }
+  "setEnableStreams": {
+    "@configChanges": "1",
+    "@infoChanges": "1"
+  }
 }
 ```
+
+**Simulator sends:**
+
+```json
+{ "anpr": { "@date": "1672531200000", "decision": { "@plate": "AA123AA", "@reliability": "80", "@context": "F" } } }
+```
+
+### 6. Web UI Specification
+
+#### 6.1. Technology (Unspecified - Recommendation to use an in process technology, for example: a library to embed the web server in the same process)
+
+#### 6.2. Structure
+
+The Web UI will consist of a single HTML page with JavaScript for dynamic updates.
+
+#### 6.3. Elements
+
+*   **Device Status Display:**
+    *   IP Address: Display the simulator's IP address.
+    *   Connection State: Indicate if the simulator is connected to a Websocket client.
+    *   Barrier State: Display whether the barrier is open or closed.
+    *   Lock State: Indicates if the device is locked or unlocked.
+*   **Plate Input:**
+    *   Text Field:  For entering the license plate to be recognized.
+*   **Trigger Recognition:**
+    *   Button: "Trigger Recognition" button to manually trigger a license plate recognition.
+*   **Barrier Control:**
+    *   "Open Barrier" button.
+    *   "Close Barrier" button.
+*   **Configuration Settings:**
+    *   Recognition Success Rate: Slider (0-100) labeled "Recognition Success Rate (%)".
+    *   Default Context: Dropdown menu labeled "Default Context" with options for various countries (e.g., "F", "GB", "US").
+    *    Plate Reliability: Slider (0-100) labeled "Plate Reliability (0-100)".
+*   **Log Display:**
+    *   Text Area:  A read-only text area to display recent events and messages (e.g., "Plate recognized: AA123AA", "Barrier opened", "Configuration changed"). The simulator should limit the length.
+
+### 7. Configuration
+
+The simulator will load its initial configuration from a JSON file (e.g., `config.json`). This file will contain default values for the following parameters:
+
+```json
+{
+  "ipAddress": "127.0.0.1",
+  "httpPort": 8080,
+  "wsPort": 10001,
+  "recognitionSuccessRate": 75,
+  "defaultContext": "F",
+  "plateReliability": 80
+}
+```
+
+The Web UI will allow users to modify these parameters, and the changes will be saved back to the configuration file.
+
+### 8. Error Handling
+
+The simulator will implement robust error handling to provide informative error messages to clients.
+
+*   **HTTP API:**
+    *   **Invalid Request Format:** Return a 400 Bad Request with a JSON body describing the error.  Example: `{"answer":{"@status":"failed","@errorText":"Invalid JSON format"}}`
+    *   **Unsupported Message:** Return a 400 Bad Request with an appropriate error message. Example: `{"answer":{"@status":"failed","@errorText":"Unsupported message type"}}`
+    *   **Device Locked:** Return a 403 Forbidden with an appropriate error message.  Example: `{"answer":{"@status":"failed","@errorText":"Device is locked"}}`
+    *   **Internal Server Error:** Return a 500 Internal Server Error with an appropriate error message for unexpected errors. Example: `{"answer":{"@status":"failed","@errorText":"Internal server error"}}`
+*   **Websocket API:**
+    *   **Invalid JSON:** Close the connection with a 1002 Protocol Error (see [https://www.rfc-editor.org/rfc/rfc6455#section-7.4](https://www.rfc-editor.org/rfc/rfc6455#section-7.4)).
+    *   **Unsupported Message:** Send an `answer` message back to the client indicating that the message type is not supported. (same as HTTP)
+
+### 9. Security Considerations
+
+*   **No Real Authentication:** The simulator does not need to implement actual user authentication. The lock state will be in memory and resetted at restart.
+*   **Data Sensitivity:**  The simulator handles simulated license plate data. This data is for development purposes only, but implementers should avoid logging or storing this data unnecessarily.
+
+### 10. Appendix: Predefined XSD
+
+This is an example XSD that should be used by the simulator to answer `getXSD` queries:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="msg">
+    <xs:complexType>
+      <xs:choice>
+        <xs:element name="getConfig" type="xs:complexType"/>
+        <xs:element name="getCurrentLog" type="xs:complexType"/>
+        <xs:element name="getDatabase" type="xs:complexType"/>
+        <xs:element name="getDate" type="xs:complexType"/>
+        <xs:element name="getImage">
+          <xs:complexType>
+            <xs:attribute name="type" type="xs:string" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="getInfos" type="xs:complexType"/>
+        <xs:element name="getLog">
+          <xs:complexType>
+            <xs:attribute name="id" type="xs:integer" use="required"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="getXSD" type="xs:complexType"/>
+        <xs:element name="openBarrier" type="xs:complexType"/>
+        <xs:element name="triggerOn">
+          <xs:complexType>
+            <xs:attribute name="cameraId" type="xs:integer" use="optional"/>
+            <xs:attribute name="forceTriggerId" type="xs:integer" use="optional"/>
+            <xs:attribute name="timeout" type="xs:integer" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="triggerOff">
+          <xs:complexType>
+            <xs:attribute name="cameraId" type="xs:integer" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="lock">
+          <xs:complexType>
+            <xs:attribute name="password" type="xs:string" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="unlock" type="xs:complexType"/>
+        <xs:element name="setEnableStreams">
+            <xs:complexType>
+                <xs:attribute name="configChanges" type="xs:string" use="optional"/>
+                <xs:attribute name="infoChanges" type="xs:string" use="optional"/>
+                <xs:attribute name="traces" type="xs:string" use="optional"/>
+                <xs:element name="cameras">
+                    <xs:complexType>
+                        <xs:element name="camera">
+                            <xs:complexType>
+                                <xs:attribute name="id" type="xs:integer" use="required"/>
+                                <xs:attribute name="enabled" type="xs:string" use="optional"/>
+                            </xs:complexType>
+                        </xs:element>
+                    </xs:complexType>
+                </xs:element>
+            </xs:complexType>
+        </xs:element>
+        <xs:element name="resetConfig" type="xs:complexType" />
+        <xs:element name="resetEngine" type="xs:complexType" />
+        <xs:element name="setConfig">
+            <xs:complexType>
+                <xs:element name="config">
+                    <xs:complexType>
+                        <xs:element name="cameras">
+                            <xs:complexType>
+                                <xs:element name="camera">
+                                    <xs:complexType>
+                                        <xs:element name="anpr">
+                                            <xs:complexType>
+                                                <xs:element name="ocr">
+                                                    <xs:complexType>
+                                                        <xs:attribute name="minPlateWidth" type="xs:string" use="optional"/>
+                                                        <xs:attribute name="maxPlateWidth" type="xs:string" use="optional"/>
+                                                        <xs:attribute name="minPlateHeight" type="xs:string" use="optional"/>
+                                                        <xs:attribute name="maxPlateHeight" type="xs:string" use="optional"/>
+                                                        <xs:attribute name="zoomPlateWidth" type="xs:string" use="optional"/>
+                                                        <xs:attribute name="minReliability" type="xs:string" use="optional"/>
+                                                        <xs:attribute name="minCharWidthStatic" type="xs:string" use="optional"/>
+                                                        <xs:attribute name="minPlateWidthStatic8Char" type="xs:string" use="optional"/>
+                                                        <xs:attribute name="minRecognitionStatic" type="xs:string" use="optional"/>
+                                                        <xs:attribute name="minRecognition" type="xs:string" use="optional"/>
+                                                        <xs:attribute name="maxNoPlateBeforeDecision" type="xs:string" use="optional"/>
+                                                    </xs:complexType>
+                                                </xs:element>
+                                            </xs:complexType>
+                                        </xs:element>
+                                    </xs:complexType>
+                                </xs:element>
+                            </xs:complexType>
+                        </xs:element>
+                    </xs:complexType>
+                </xs:element>
+            </xs:complexType>
+        </xs:element>
+        <xs:element name="editDatabase">
+          <xs:complexType>
+            <xs:choice>
+                <xs:element name="addPlate" type="plateType"/>
+                <xs:element name="delPlate" type="plateType"/>
+            </xs:choice>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="resetCounters" type="xs:complexType" />
+          <xs:element name="allowSetConfig" type="xs:complexType" />
+          <xs:element name="forbidSetConfig" type="xs:complexType" />
+          <xs:element name="calibrateZoomFocus" type="xs:complexType" />
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+  <xs:complexType name="plateType">
+      <xs:attribute name="value" type="xs:string" use="required"/>
+  </xs:complexType>
+</xs:schema>
+```
+
+### 11. Future Enhancements
+
+*   **More Complete CDK Message Support:** Implement support for a wider range of CDK messages.
+*   **More Realistic Simulation:** Improve the realism of the device logic, including more accurate plate recognition, environmental factors, and sensor behavior.
+*   **Configuration GUI with Validation** Implement a proper GUI validation in each configuration parameter to avoid entering invalid data.
+*   **API logging** Implement logs to track all the messages received and sent in http and Websocket endpoinst.
+*   **Multi-Camera Support:** Extend the simulator to support multiple simulated cameras.
+*   **Video Streaming:** Implement support for video streaming, sending simulated video data.
+*   **Cloud integration simulation:** Implement the simulation of the comunication to external services like CST and MOOBYL and to manage possible errors and warnings in those communications.
+*   **Multi Threading** Use threads to properly emulate background processes.
+
+### 12. Conclusion
+
+This specification provides a detailed blueprint for building a Survision device simulator. By adhering to this document, developers can create a valuable tool for testing and developing integrations with Survision devices, improving the overall quality and reliability of their solutions.
