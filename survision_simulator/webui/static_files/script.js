@@ -84,7 +84,7 @@ function connectWebSocket() {
             const message = JSON.parse(event.data);
             handleWebSocketMessage(message);
         } catch (error) {
-            addEvent('error', `Error parsing WebSocket message: ${error.message}`);
+            addEvent('error', `Error handling WebSocket message: ${error.message}`, event.data);
         }
     };
 }
@@ -112,6 +112,10 @@ function handleWebSocketMessage(message) {
         addEvent('success', `Plate recognized: ${plate} (Reliability: ${reliability})`, message.anpr);
     } else if (message.infos) {
         updateDeviceStatus(message.infos);
+    } else if (message.answer?.subscriptions) {
+        addEvent('success', 'WebSocket streams enabled', message.answer.subscriptions);
+    } else {
+        addEvent('error', 'Unknown message', message);
     }
 }
 

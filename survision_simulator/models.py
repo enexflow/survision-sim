@@ -398,6 +398,99 @@ class SetupMessage(ProhibitedOverHTTPMessage):
     setup: Dict[str, Any] = Field(alias="setup")
 
 
+class IEEE8021XConfig(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    certificate_password: Optional[str] = Field(default=None, alias=str("@certificatePassword"))
+    identity: Optional[str] = Field(default=None, alias=str("@identity"))
+    authentication: str = Field(alias=str("@authentication"))
+    pfx: Optional[str] = Field(default=None, alias="PFX")
+    certificate: Optional[str] = Field(default=None, alias="certificate")
+    private_key: Optional[str] = Field(default=None, alias="privateKey")
+    certificate_authority: Optional[str] = Field(default=None, alias="certificateAuthority")
+
+
+class SecurityConfig(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    new_lock_password: Optional[str] = Field(default=None, alias=str("@newLockPassword"))
+    current_lock_password: Optional[str] = Field(default=None, alias=str("@currentLockPassword"))
+    lock_password_hint: Optional[str] = Field(default=None, alias=str("@lockPasswordHint"))
+    rsa_hint: Optional[str] = Field(default=None, alias=str("@rsaHint"))
+    rsa_public_key_password: Optional[str] = Field(default=None, alias=str("@rsaPublicKeyPassword"))
+    ssl_certificate_password: Optional[str] = Field(default=None, alias=str("@sslCertificatePassword"))
+    ssl_certificate_reset: Optional[bool] = Field(default=None, alias=str("@sslCertificateReset"))
+    ssl_pfx: Optional[str] = Field(default=None, alias="sslPFX")
+    ssl_certificate: Optional[str] = Field(default=None, alias="sslCertificate")
+    ssl_private_key: Optional[str] = Field(default=None, alias="sslPrivateKey")
+    ssl_certificate_authority: Optional[str] = Field(default=None, alias="sslCertificateAuthority")
+    rsa_public_key: Optional[str] = Field(default=None, alias="rsaPublicKey")
+    ieee8021x: Optional[IEEE8021XConfig] = Field(default=None, alias="IEEE8021X")
+    
+    @field_validator("ssl_certificate_reset", mode="before")
+    @classmethod
+    def parse_bool(cls, value: Any) -> Optional[bool]:
+        """Parse boolean from string if needed."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value == "1" or value.lower() == "true"
+        return bool(value)
+
+
+class TestFTPConfig(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    address: str = Field(alias=str("@address"))
+    port: Optional[int] = Field(default=None, alias=str("@port"))
+    login: Optional[str] = Field(default=None, alias=str("@login"))
+    password: Optional[str] = Field(default=None, alias=str("@password"))
+    protocol: Optional[str] = Field(default=None, alias=str("@protocol"))
+    file_name: Optional[str] = Field(default=None, alias=str("@fileName"))
+
+
+class TestNTPConfig(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    host: str = Field(alias=str("@host"))
+
+
+class UpdateWebFirmwareConfig(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    url: str = Field(alias=str("@url"))
+
+
+class SetSecurityMessage(LockedOperationMessage):
+    """Model for setSecurity message."""
+    set_security: SecurityConfig = Field(alias="setSecurity")
+
+
+class TestFTPMessage(BaseModel):
+    """Model for testFTP message."""
+    test_ftp: TestFTPConfig = Field(alias="testFTP")
+
+
+class TestNTPMessage(BaseModel):
+    """Model for testNTP message."""
+    test_ntp: TestNTPConfig = Field(alias="testNTP")
+
+
+class UpdateWebFirmwareMessage(BaseModel):
+    """Model for updateWebFirmware message."""
+    update_web_firmware: UpdateWebFirmwareConfig = Field(alias="updateWebFirmware")
+
+
+class EraseDatabaseMessage(LockedOperationMessage):
+    """Model for eraseDatabase message."""
+    erase_database: None = Field(default=None, alias="eraseDatabase")
+
+
+class RebootMessage(LockedOperationMessage):
+    """Model for reboot message."""
+    reboot: None = Field(default=None, alias="reboot")
+
+
 class Warning(BaseModel):
     text: str = Field(serialization_alias="@text")
     config_path: Optional[str] = Field(default=None, serialization_alias="@configPath")
@@ -576,6 +669,12 @@ MessageType = Union[
     KeepAliveMessage,
     UpdateMessage,
     SetupMessage,
+    SetSecurityMessage,
+    TestFTPMessage,
+    TestNTPMessage,
+    UpdateWebFirmwareMessage,
+    EraseDatabaseMessage,
+    RebootMessage,
 ]
 MessageTypeModel: TypeAdapter[MessageType] = TypeAdapter(MessageType)
 
@@ -619,3 +718,4 @@ def is_prohibited_over_http(message: MessageType) -> bool:
         True if the message is prohibited over HTTP, False otherwise
     """
     return isinstance(message, ProhibitedOverHTTPMessage)
+

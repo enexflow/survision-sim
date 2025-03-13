@@ -14,6 +14,8 @@ class EventType(Enum):
     BARRIER = auto()
     DATABASE = auto()
     RECOGNITION = auto()
+    SECURITY = auto()
+    REBOOT = auto()
 
 
 class WebSocketClient(Protocol):
@@ -29,12 +31,23 @@ class BarrierEvent:
 
 @dataclass
 class DatabaseEvent:
-    action: Literal["add", "remove"]
-    plate: str
+    action: Literal["add", "remove", "clear"]
+    plate: Optional[str]
     timestamp: int
 
 
-Event = Union[BarrierEvent, DatabaseEvent, RecognitionEvent]
+@dataclass
+class SecurityEvent:
+    action: Literal["password_change", "rsa_change"]
+    timestamp: int
+
+
+@dataclass
+class RebootEvent:
+    timestamp: int
+
+
+Event = Union[BarrierEvent, DatabaseEvent, RecognitionEvent, SecurityEvent, RebootEvent]
 
 
 class DataStore:
@@ -52,6 +65,11 @@ class DataStore:
         self._is_locked = False
         self._barrier_open = False
         self._allow_set_config = True
+        
+        # Security settings
+        self._lock_password = None
+        self._lock_password_hint = None
+        self._rsa_hint = None
         
         # Database of plates
         self._plates_database: Set[str] = set()
@@ -80,6 +98,10 @@ class DataStore:
             True if successful, False otherwise
         """
         with self._lock:
+            # If a lock password is set, verify it
+            if self._lock_password is not None and password != self._lock_password:
+                return False
+                
             self._is_locked = True
             return True
     
@@ -106,6 +128,74 @@ class DataStore:
         """
         with self._lock:
             return self._is_locked
+    
+    def has_lock_password(self) -> bool:
+        """
+        Check if a lock password is set.
+        
+        Returns:
+            True if a password is set, False otherwise
+        """
+        with self._lock:
+            return self._lock_password is not None
+    
+    def set_lock_password(self, password: str) -> None:
+        """
+        Set the lock password.
+        
+        Args:
+            password: Password to set
+        """
+        with self._lock:
+            self._lock_password = password
+            self._add_event_log(SecurityEvent(
+                action="password_change",
+                timestamp=self.get_simulated_date()
+            ))
+    
+    def set_lock_password_hint(self, hint: str) -> None:
+        """
+        Set the lock password hint.
+        
+        Args:
+            hint: Password hint to set
+        """
+        with self._lock:
+            self._lock_password_hint = hint
+    
+    def get_lock_password_hint(self) -> Optional[str]:
+        """
+        Get the lock password hint.
+        
+        Returns:
+            Password hint or None
+        """
+        with self._lock:
+            return self._lock_password_hint
+    
+    def set_rsa_hint(self, hint: str) -> None:
+        """
+        Set the RSA hint.
+        
+        Args:
+            hint: RSA hint to set
+        """
+        with self._lock:
+            self._rsa_hint = hint
+            self._add_event_log(SecurityEvent(
+                action="rsa_change",
+                timestamp=self.get_simulated_date()
+            ))
+    
+    def get_rsa_hint(self) -> Optional[str]:
+        """
+        Get the RSA hint.
+        
+        Returns:
+            RSA hint or None
+        """
+        with self._lock:
+            return self._rsa_hint
     
     def open_barrier(self) -> bool:
         """
@@ -207,6 +297,22 @@ class DataStore:
                 return True
             return False
     
+    def clear_database(self) -> bool:
+        """
+        Clear all plates from the database.
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        with self._lock:
+            self._plates_database.clear()
+            self._add_event_log(DatabaseEvent(
+                action="clear",
+                plate=None,
+                timestamp=self.get_simulated_date()
+            ))
+            return True
+    
     def get_database_plates(self) -> List[str]:
         """
         Get all plates in the database.
@@ -237,6 +343,25 @@ class DataStore:
         """
         with self._lock:
             return self._current_recognition
+    
+    def simulate_reboot(self) -> None:
+        """
+        Simulate a device reboot.
+        
+        This resets certain device state but preserves configuration.
+        """
+        with self._lock:
+            # Reset device state
+            self._is_locked = False
+            self._barrier_open = False
+            
+            # Reset current recognition
+            self._current_recognition = None
+            
+            # Log the reboot event
+            self._add_event_log(RebootEvent(
+                timestamp=self.get_simulated_date()
+            ))
     
     def get_event_logs(self, limit: Optional[int] = None) -> List[Event]:
         """

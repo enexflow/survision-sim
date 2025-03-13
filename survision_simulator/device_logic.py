@@ -63,6 +63,12 @@ from survision_simulator.models import (
     AnprEvent,
     RecognitionEvent,
     RecognitionDecision,
+    SetSecurityMessage,
+    TestFTPMessage,
+    TestNTPMessage,
+    UpdateWebFirmwareMessage,
+    EraseDatabaseMessage,
+    RebootMessage,
 )
 
 # Type for message handler functions
@@ -162,6 +168,18 @@ class DeviceLogic:
                 return self._handle_setup(message), 200
             case KeepAliveMessage():
                 return self._handle_keep_alive(message), 200
+            case SetSecurityMessage():
+                return self._handle_set_security(message), 200
+            case TestFTPMessage():
+                return self._handle_test_ftp(message), 200
+            case TestNTPMessage():
+                return self._handle_test_ntp(message), 200
+            case UpdateWebFirmwareMessage():
+                return self._handle_update_web_firmware(message), 200
+            case EraseDatabaseMessage():
+                return self._handle_erase_database(message), 200
+            case RebootMessage():
+                return self._handle_reboot(message), 200
         raise NotImplementedError(f"Unknown message type: {type(message).__name__}")
 
     def process_websocket_message(self, message: bytes) -> Optional[AnswerType]:
@@ -767,4 +785,155 @@ class DeviceLogic:
 
     def _handle_keep_alive(self, message: KeepAliveMessage) -> AnswerType:
         self.logger.info("Handling KeepAliveMessage to maintain connection")
+        return self._create_success_response()
+
+    def _handle_set_security(self, message: SetSecurityMessage) -> AnswerType:
+        """
+        Handle setSecurity message.
+
+        Args:
+            message: SetSecurityMessage model
+
+        Returns:
+            Success response or error response
+        """
+        self.logger.info("Handling SetSecurityMessage to update security settings")
+        
+        if not self.data_store.is_device_locked():
+            return self._create_error_response("Device must be locked to change security settings")
+        
+        # Extract security settings from message
+        security_config = message.set_security
+        
+        # Check for lock password changes
+        if security_config.new_lock_password is not None:
+            # Verify current password if needed
+            if self.data_store.has_lock_password() and security_config.current_lock_password is None:
+                return self._create_error_response("Current password required to change lock password")
+            
+            # Update lock password
+            self.data_store.set_lock_password(security_config.new_lock_password)
+            
+            # Update password hint if provided
+            if security_config.lock_password_hint is not None:
+                self.data_store.set_lock_password_hint(security_config.lock_password_hint)
+        
+        # Handle RSA encryption settings if present
+        if security_config.rsa_hint is not None:
+            self.data_store.set_rsa_hint(security_config.rsa_hint)
+        
+        return self._create_success_response()
+
+    def _handle_test_ftp(self, message: TestFTPMessage) -> AnswerType:
+        """
+        Handle testFTP message.
+
+        Args:
+            message: TestFTPMessage model
+
+        Returns:
+            Success response or error response
+        """
+        self.logger.info("Handling TestFTPMessage to test FTP server connectivity")
+        
+        # Extract FTP server details
+        ftp_config = message.test_ftp
+        
+        if not ftp_config.address:
+            return self._create_error_response("FTP server address is required")
+        
+        # In a real implementation, we would test the connection
+        # For simulation, we'll just return success
+        self.logger.info(f"Simulating FTP test to server: {ftp_config.address}")
+        
+        return self._create_success_response()
+
+    def _handle_test_ntp(self, message: TestNTPMessage) -> AnswerType:
+        """
+        Handle testNTP message.
+
+        Args:
+            message: TestNTPMessage model
+
+        Returns:
+            Success response or error response
+        """
+        self.logger.info("Handling TestNTPMessage to test NTP server connectivity")
+        
+        # Extract NTP server details
+        ntp_config = message.test_ntp
+        
+        if not ntp_config.host:
+            return self._create_error_response("NTP server host is required")
+        
+        # In a real implementation, we would test the connection
+        # For simulation, we'll just return success
+        self.logger.info(f"Simulating NTP test to server: {ntp_config.host}")
+        
+        return self._create_success_response()
+
+    def _handle_update_web_firmware(self, message: UpdateWebFirmwareMessage) -> AnswerType:
+        """
+        Handle updateWebFirmware message.
+
+        Args:
+            message: UpdateWebFirmwareMessage model
+
+        Returns:
+            Success response or error response
+        """
+        self.logger.info("Handling UpdateWebFirmwareMessage to update firmware from web")
+        
+        # Extract firmware URL
+        firmware_config = message.update_web_firmware
+        
+        if not firmware_config.url:
+            return self._create_error_response("Firmware URL is required")
+        
+        # In a real implementation, we would download and install the firmware
+        # For simulation, we'll just return success
+        self.logger.info(f"Simulating firmware update from URL: {firmware_config.url}")
+        
+        return self._create_success_response()
+
+    def _handle_erase_database(self, message: EraseDatabaseMessage) -> AnswerType:
+        """
+        Handle eraseDatabase message.
+
+        Args:
+            message: EraseDatabaseMessage model
+
+        Returns:
+            Success response or error response
+        """
+        self.logger.info("Handling EraseDatabaseMessage to erase the internal database")
+        
+        if not self.data_store.is_device_locked():
+            return self._create_error_response("Device must be locked to erase database")
+        
+        # Clear the database
+        if self.data_store.clear_database():
+            return self._create_success_response()
+        
+        return self._create_error_response("Failed to erase database")
+
+    def _handle_reboot(self, message: RebootMessage) -> AnswerType:
+        """
+        Handle reboot message.
+
+        Args:
+            message: RebootMessage model
+
+        Returns:
+            Success response or error response
+        """
+        self.logger.info("Handling RebootMessage to reboot the device")
+        
+        if not self.data_store.is_device_locked():
+            return self._create_error_response("Device must be locked to reboot")
+        
+        # In a real implementation, we would reboot the device
+        # For simulation, we'll just reset some state
+        self.data_store.simulate_reboot()
+        
         return self._create_success_response()
