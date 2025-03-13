@@ -1,20 +1,22 @@
 // DOM Elements
-const ipAddressElement = document.getElementById('ip-address');
-const connectionStatusElement = document.getElementById('connection-status');
-const barrierStatusElement = document.getElementById('barrier-status');
-const lockStatusElement = document.getElementById('lock-status');
-const plateInputElement = document.getElementById('plate-input');
-const triggerRecognitionButton = document.getElementById('trigger-recognition');
-const openBarrierButton = document.getElementById('open-barrier');
-const closeBarrierButton = document.getElementById('close-barrier');
-const recognitionRateElement = document.getElementById('recognition-rate');
-const recognitionRateValueElement = document.getElementById('recognition-rate-value');
-const contextSelectElement = document.getElementById('context-select');
-const plateReliabilityElement = document.getElementById('plate-reliability');
-const plateReliabilityValueElement = document.getElementById('plate-reliability-value');
-const saveConfigButton = document.getElementById('save-config');
-const logDisplayElement = document.getElementById('log-display');
-const clearLogButton = document.getElementById('clear-log');
+const elements = {
+    ipAddress: document.getElementById('ip-address'),
+    connectionStatus: document.getElementById('connection-status'),
+    barrierStatus: document.getElementById('barrier-status'),
+    lockStatus: document.getElementById('lock-status'),
+    plateInput: document.getElementById('plate-input'),
+    triggerRecognition: document.getElementById('trigger-recognition'),
+    openBarrier: document.getElementById('open-barrier'),
+    closeBarrier: document.getElementById('close-barrier'),
+    recognitionRate: document.getElementById('recognition-rate'),
+    recognitionRateValue: document.getElementById('recognition-rate-value'),
+    contextSelect: document.getElementById('context-select'),
+    plateReliability: document.getElementById('plate-reliability'),
+    plateReliabilityValue: document.getElementById('plate-reliability-value'),
+    saveConfig: document.getElementById('save-config'),
+    eventTimeline: document.getElementById('event-timeline'),
+    clearLog: document.getElementById('clear-log')
+};
 
 // WebSocket connection
 let ws = null;
@@ -26,26 +28,29 @@ function initUI() {
     fetchConfig();
     
     // Set up event listeners
-    triggerRecognitionButton.addEventListener('click', triggerRecognition);
-    openBarrierButton.addEventListener('click', openBarrier);
-    closeBarrierButton.addEventListener('click', closeBarrier);
-    saveConfigButton.addEventListener('click', saveConfig);
-    clearLogButton.addEventListener('click', clearLog);
-    
-    // Set up range input listeners
-    recognitionRateElement.addEventListener('input', () => {
-        recognitionRateValueElement.textContent = recognitionRateElement.value;
-    });
-    
-    plateReliabilityElement.addEventListener('input', () => {
-        plateReliabilityValueElement.textContent = plateReliabilityElement.value;
-    });
+    setupEventListeners();
     
     // Connect to WebSocket
     connectWebSocket();
     
     // Update IP address
     updateIPAddress();
+}
+
+function setupEventListeners() {
+    elements.triggerRecognition.addEventListener('click', triggerRecognition);
+    elements.openBarrier.addEventListener('click', openBarrier);
+    elements.closeBarrier.addEventListener('click', closeBarrier);
+    elements.saveConfig.addEventListener('click', saveConfig);
+    elements.clearLog.addEventListener('click', clearEventTimeline);
+    
+    elements.recognitionRate.addEventListener('input', () => {
+        elements.recognitionRateValue.textContent = `${elements.recognitionRate.value}%`;
+    });
+    
+    elements.plateReliability.addEventListener('input', () => {
+        elements.plateReliabilityValue.textContent = `${elements.plateReliability.value}%`;
+    });
 }
 
 // Connect to WebSocket server
@@ -59,19 +64,19 @@ function connectWebSocket() {
     ws.onopen = () => {
         wsConnected = true;
         updateConnectionStatus(true);
-        logToUI('WebSocket connected');
+        addEvent('success', 'WebSocket connected');
         enableStreams();
     };
     
     ws.onclose = () => {
         wsConnected = false;
         updateConnectionStatus(false);
-        logToUI('WebSocket disconnected');
+        addEvent('error', 'WebSocket disconnected');
         setTimeout(connectWebSocket, 5000);
     };
     
     ws.onerror = (error) => {
-        logToUI(`WebSocket error: ${error.message}`);
+        addEvent('error', `WebSocket error: ${error.message}`);
     };
     
     ws.onmessage = (event) => {
@@ -79,7 +84,7 @@ function connectWebSocket() {
             const message = JSON.parse(event.data);
             handleWebSocketMessage(message);
         } catch (error) {
-            logToUI(`Error parsing WebSocket message: ${error.message}`);
+            addEvent('error', `Error parsing WebSocket message: ${error.message}`);
         }
     };
 }
@@ -101,17 +106,11 @@ function enableStreams() {
 
 // Handle WebSocket messages
 function handleWebSocketMessage(message) {
-    // Log the message
-    logToUI(`Received: ${JSON.stringify(message)}`);
-    
-    // Handle specific message types
     if (message.anpr) {
-        // Handle ANPR message
         const plate = message.anpr.decision ? message.anpr.decision['@plate'] : 'Unknown';
         const reliability = message.anpr.decision ? message.anpr.decision['@reliability'] : 'Unknown';
-        logToUI(`Plate recognized: ${plate} (Reliability: ${reliability})`);
+        addEvent('success', `Plate recognized: ${plate} (Reliability: ${reliability})`);
     } else if (message.infos) {
-        // Handle infos message
         updateDeviceStatus(message.infos);
     }
 }
@@ -128,9 +127,7 @@ function updateDeviceStatus(infos) {
 function fetchConfig() {
     fetch('/sync', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ getConfig: null })
     })
     .then(response => response.json())
@@ -140,7 +137,7 @@ function fetchConfig() {
         }
     })
     .catch(error => {
-        logToUI(`Error fetching config: ${error.message}`);
+        addEvent('error', `Error fetching config: ${error.message}`);
     });
 }
 
@@ -150,35 +147,33 @@ function updateConfigUI(config) {
         // Update recognition rate
         const plateReliability = config.cameras.camera.anpr['@plateReliability'];
         if (plateReliability) {
-            plateReliabilityElement.value = plateReliability;
-            plateReliabilityValueElement.textContent = plateReliability;
+            elements.plateReliability.value = plateReliability;
+            elements.plateReliabilityValue.textContent = `${plateReliability}%`;
         }
         
         // Update context
         const context = config.cameras.camera.anpr['@context'];
         if (context) {
             const mainContext = context.split('>')[0];
-            contextSelectElement.value = mainContext;
+            elements.contextSelect.value = mainContext;
         }
     } catch (error) {
-        logToUI(`Error updating config UI: ${error.message}`);
+        addEvent('error', `Error updating config UI: ${error.message}`);
     }
 }
 
 // Trigger plate recognition
 function triggerRecognition() {
-    const plate = plateInputElement.value.trim();
+    const plate = elements.plateInput.value.trim();
     
     if (!plate) {
-        alert('Please enter a license plate');
+        addEvent('warning', 'Please enter a license plate');
         return;
     }
     
     fetch('/sync', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             triggerOn: { 
                 "@cameraId": "0",
@@ -190,16 +185,14 @@ function triggerRecognition() {
     .then(data => {
         if (data.triggerAnswer && data.triggerAnswer['@status'] === 'ok') {
             const triggerId = data.triggerAnswer['@triggerId'];
-            logToUI(`Trigger started with ID: ${triggerId}`);
-            
-            // Simulate recognition with the entered plate
+            addEvent('success', `Recognition started for plate: ${plate}`);
             simulateRecognition(plate, triggerId);
         } else {
-            logToUI('Failed to start trigger');
+            addEvent('error', 'Failed to start recognition');
         }
     })
     .catch(error => {
-        logToUI(`Error triggering recognition: ${error.message}`);
+        addEvent('error', `Error triggering recognition: ${error.message}`);
     });
 }
 
@@ -210,9 +203,7 @@ function simulateRecognition(plate, triggerId) {
         // End the trigger
         fetch('/sync', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 triggerOff: { 
                     "@cameraId": "0"
@@ -222,22 +213,20 @@ function simulateRecognition(plate, triggerId) {
         .then(response => response.json())
         .then(data => {
             if (data.triggerAnswer && data.triggerAnswer['@status'] === 'ok') {
-                logToUI(`Trigger ended with ID: ${triggerId}`);
+                addEvent('success', `Recognition completed for plate: ${plate}`);
                 
                 // Get the current log to see the recognition
                 fetch('/sync', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ getCurrentLog: null })
                 })
                 .then(response => response.json())
                 .then(data => {
                     if (data.anpr) {
-                        logToUI(`Recognition result: ${JSON.stringify(data.anpr)}`);
+                        addEvent('success', `Recognition result: ${JSON.stringify(data.anpr)}`);
                     } else if (data.answer && data.answer['@status'] === 'failed') {
-                        logToUI(`Recognition failed: ${data.answer['@errorText']}`);
+                        addEvent('error', `Recognition failed: ${data.answer['@errorText']}`);
                     }
                 });
             }
@@ -249,43 +238,39 @@ function simulateRecognition(plate, triggerId) {
 function openBarrier() {
     fetch('/sync', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ openBarrier: null })
     })
     .then(response => response.json())
     .then(data => {
         if (data.answer?.status === 'ok') {
             updateBarrierStatus(true);
-            logToUI('Barrier opened');
+            addEvent('success', 'Barrier opened');
         } else {
-            logToUI(`Failed to open barrier: ${data.answer?.errorText ?? 'Unknown error'}`);
+            addEvent('error', `Failed to open barrier: ${data.answer?.errorText ?? 'Unknown error'}`);
         }
     })
     .catch(error => {
-        logToUI(`Error opening barrier: ${error.message}`);
+        addEvent('error', `Error opening barrier: ${error.message}`);
     });
 }
 
 // Close barrier
 function closeBarrier() {
     updateBarrierStatus(false);
-    logToUI('Barrier closed');
+    addEvent('success', 'Barrier closed');
 }
 
 // Save configuration
 function saveConfig() {
-    const plateReliability = plateReliabilityElement.value;
-    const context = contextSelectElement.value;
-    const recognitionRate = recognitionRateElement.value;
+    const plateReliability = elements.plateReliability.value;
+    const context = elements.contextSelect.value;
+    const recognitionRate = elements.recognitionRate.value;
     
     // Update plate reliability
     fetch('/sync', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             setConfig: {
                 config: {
@@ -303,13 +288,13 @@ function saveConfig() {
     .then(response => response.json())
     .then(data => {
         if (data.answer && data.answer['@status'] === 'ok') {
-            logToUI('Configuration updated successfully');
+            addEvent('success', 'Configuration updated successfully');
         } else {
-            logToUI(`Failed to update configuration: ${data.answer ? data.answer['@errorText'] : 'Unknown error'}`);
+            addEvent('error', `Failed to update configuration: ${data.answer ? data.answer['@errorText'] : 'Unknown error'}`);
         }
     })
     .catch(error => {
-        logToUI(`Error updating configuration: ${error.message}`);
+        addEvent('error', `Error updating configuration: ${error.message}`);
     });
 }
 
@@ -317,49 +302,61 @@ function saveConfig() {
 function updateIPAddress() {
     fetch('/sync', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ getInfos: null })
     })
     .then(response => response.json())
     .then(data => {
         const ipAddress = data.infos?.network?.interface?.['@ipAddress'];
         if (ipAddress) {
-            ipAddressElement.textContent = ipAddress;
+            elements.ipAddress.textContent = ipAddress;
         }
     })
     .catch(error => {
-        logToUI(`Error fetching IP address: ${error.message}`);
+        addEvent('error', `Error fetching IP address: ${error.message}`);
     });
 }
 
-// Log message to UI
-function logToUI(message) {
-    const timestamp = new Date().toLocaleTimeString();
-    const formattedMessage = `[${timestamp}] ${message}`;
-    logDisplayElement.value = `${formattedMessage}\n${logDisplayElement.value}`;
-    logDisplayElement.scrollTop = 0;
+function addEvent(type, message) {
+    const event = document.createElement('div');
+    event.className = `event ${type}-event`;
+    
+    const time = document.createElement('div');
+    time.className = 'event-time';
+    time.textContent = new Date().toLocaleTimeString();
+    
+    const messageEl = document.createElement('div');
+    messageEl.className = 'event-message';
+    messageEl.textContent = message;
+    
+    event.appendChild(time);
+    event.appendChild(messageEl);
+    
+    elements.eventTimeline.insertBefore(event, elements.eventTimeline.firstChild);
+    
+    if (elements.eventTimeline.children.length > 100) {
+        elements.eventTimeline.removeChild(elements.eventTimeline.lastChild);
+    }
 }
 
-// Clear log
-function clearLog() {
-    logDisplayElement.value = '';
+function clearEventTimeline() {
+    elements.eventTimeline.innerHTML = '';
+    addEvent('success', 'Event timeline cleared');
 }
 
 function updateConnectionStatus(connected) {
-    connectionStatusElement.textContent = connected ? 'Connected' : 'Disconnected';
-    connectionStatusElement.className = `status-value ${connected ? 'connected' : 'disconnected'}`;
+    elements.connectionStatus.textContent = connected ? 'Connected' : 'Disconnected';
+    elements.connectionStatus.className = connected ? 'value connected' : 'value disconnected';
 }
 
 function updateBarrierStatus(isOpen) {
-    barrierStatusElement.textContent = isOpen ? 'Open' : 'Closed';
-    barrierStatusElement.className = `status-value ${isOpen ? 'connected' : 'disconnected'}`;
+    elements.barrierStatus.textContent = isOpen ? 'Open' : 'Closed';
+    elements.barrierStatus.className = isOpen ? 'value connected' : 'value disconnected';
 }
 
 function updateLockStatus(isLocked) {
-    lockStatusElement.textContent = isLocked ? 'Locked' : 'Unlocked';
-    lockStatusElement.className = `status-value ${isLocked ? 'disconnected' : 'connected'}`;
+    elements.lockStatus.textContent = isLocked ? 'Locked' : 'Unlocked';
+    elements.lockStatus.className = isLocked ? 'value disconnected' : 'value connected';
 }
 
 // Initialize when the page loads
