@@ -1,6 +1,40 @@
 import threading
 import time
-from typing import Dict, List, Any, Optional, Set
+from typing import Dict, List, Literal, Optional, Set, Protocol, Union
+from dataclasses import dataclass
+from enum import Enum, auto
+
+from survision_simulator.models import (
+    AnprEvent, RecognitionEvent,
+    StreamConfig
+)
+
+
+class EventType(Enum):
+    BARRIER = auto()
+    DATABASE = auto()
+    RECOGNITION = auto()
+
+
+class WebSocketClient(Protocol):
+    """Protocol for WebSocket clients to ensure type safety."""
+    def send(self, data: str) -> None: ...
+
+
+@dataclass
+class BarrierEvent:
+    action: Literal["open", "close"]
+    timestamp: int
+
+
+@dataclass
+class DatabaseEvent:
+    action: Literal["add", "remove"]
+    plate: str
+    timestamp: int
+
+
+Event = Union[BarrierEvent, DatabaseEvent, RecognitionEvent]
 
 
 class DataStore:
@@ -23,14 +57,14 @@ class DataStore:
         self._plates_database: Set[str] = set()
         
         # Current recognition data
-        self._current_recognition: Optional[Dict[str, Any]] = None
+        self._current_recognition: Optional[AnprEvent] = None
         
         # Log of recent events (limited size)
-        self._event_log: List[Dict[str, Any]] = []
+        self._event_log: List[Event] = []
         self._max_log_size = 100
         
         # WebSocket clients and their subscriptions
-        self._ws_clients: Dict[Any, Dict[str, bool]] = {}
+        self._ws_clients: Dict[str, StreamConfig] = {}
         
         # Simulated date (milliseconds since epoch)
         self._simulated_date = int(time.time() * 1000)
@@ -82,7 +116,10 @@ class DataStore:
         """
         with self._lock:
             self._barrier_open = True
-            self._add_event_log({"type": "barrier", "action": "open"})
+            self._add_event_log(BarrierEvent(
+                action="open",
+                timestamp=self.get_simulated_date()
+            ))
             return True
     
     def close_barrier(self) -> bool:
@@ -94,7 +131,10 @@ class DataStore:
         """
         with self._lock:
             self._barrier_open = False
-            self._add_event_log({"type": "barrier", "action": "close"})
+            self._add_event_log(BarrierEvent(
+                action="close",
+                timestamp=self.get_simulated_date()
+            ))
             return True
     
     def is_barrier_open(self) -> bool:
@@ -139,7 +179,11 @@ class DataStore:
         """
         with self._lock:
             self._plates_database.add(plate)
-            self._add_event_log({"type": "database", "action": "add", "plate": plate})
+            self._add_event_log(DatabaseEvent(
+                action="add",
+                plate=plate,
+                timestamp=self.get_simulated_date()
+            ))
             return True
     
     def remove_plate_from_database(self, plate: str) -> bool:
@@ -155,7 +199,11 @@ class DataStore:
         with self._lock:
             if plate in self._plates_database:
                 self._plates_database.remove(plate)
-                self._add_event_log({"type": "database", "action": "remove", "plate": plate})
+                self._add_event_log(DatabaseEvent(
+                    action="remove",
+                    plate=plate,
+                    timestamp=self.get_simulated_date()
+                ))
                 return True
             return False
     
@@ -169,7 +217,7 @@ class DataStore:
         with self._lock:
             return list(self._plates_database)
     
-    def set_current_recognition(self, recognition: Dict[str, Any]) -> None:
+    def set_current_recognition(self, recognition: AnprEvent) -> None:
         """
         Set the current recognition data.
         
@@ -178,9 +226,9 @@ class DataStore:
         """
         with self._lock:
             self._current_recognition = recognition
-            self._add_event_log({"type": "recognition", "data": recognition})
+            self._add_event_log(recognition.anpr)
     
-    def get_current_recognition(self) -> Optional[Dict[str, Any]]:
+    def get_current_recognition(self) -> Optional[AnprEvent]:
         """
         Get the current recognition data.
         
@@ -190,7 +238,7 @@ class DataStore:
         with self._lock:
             return self._current_recognition
     
-    def get_event_logs(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_event_logs(self, limit: Optional[int] = None) -> List[Event]:
         """
         Get recent event logs.
         
@@ -205,61 +253,61 @@ class DataStore:
                 return self._event_log.copy()
             return self._event_log[-limit:].copy()
     
-    def _add_event_log(self, event: Dict[str, Any]) -> None:
+    def _add_event_log(self, event: Event) -> None:
         """
         Add an event to the log, maintaining maximum size.
         
         Args:
             event: Event data to log
         """
-        event["timestamp"] = self.get_simulated_date()
         self._event_log.append(event)
         
         # Trim log if it exceeds maximum size
         if len(self._event_log) > self._max_log_size:
             self._event_log = self._event_log[-self._max_log_size:]
     
-    def register_ws_client(self, client: Any, subscriptions: Optional[Dict[str, bool]] = None) -> None:
+    def register_ws_client(self, client: str, subscriptions: Optional[StreamConfig] = None) -> None:
         """
         Register a WebSocket client with optional subscriptions.
         
         Args:
-            client: WebSocket client
+            client: WebSocket client ID
             subscriptions: Dict of subscription flags
         """
         with self._lock:
             if subscriptions is None:
-                subscriptions = {
-                    "configChanges": False,
-                    "infoChanges": False,
-                    "traces": False
-                }
+                subscriptions = StreamConfig(
+                    config_changes=False,
+                    info_changes=False,
+                    traces=False,
+                    cameras={}
+                )
             self._ws_clients[client] = subscriptions
     
-    def unregister_ws_client(self, client: Any) -> None:
+    def unregister_ws_client(self, client: str) -> None:
         """
         Unregister a WebSocket client.
         
         Args:
-            client: WebSocket client
+            client: WebSocket client ID
         """
         with self._lock:
             if client in self._ws_clients:
                 del self._ws_clients[client]
     
-    def update_ws_client_subscriptions(self, client: Any, subscriptions: Dict[str, bool]) -> None:
+    def update_ws_client_subscriptions(self, client: str, subscriptions: StreamConfig) -> None:
         """
         Update a WebSocket client's subscriptions.
         
         Args:
-            client: WebSocket client
+            client: WebSocket client ID
             subscriptions: Dict of subscription flags
         """
         with self._lock:
             if client in self._ws_clients:
-                self._ws_clients[client].update(subscriptions)
+                self._ws_clients[client] = subscriptions
     
-    def get_ws_clients_for_event(self, event_type: str) -> List[Any]:
+    def get_ws_clients_for_event(self, event_type: EventType) -> List[str]:
         """
         Get WebSocket clients subscribed to a specific event type.
         
@@ -267,13 +315,13 @@ class DataStore:
             event_type: Event type
             
         Returns:
-            List of subscribed clients
+            List of subscribed client IDs
         """
         with self._lock:
             return [client for client, subs in self._ws_clients.items() 
-                    if subs.get(event_type, False)]
+                    if getattr(subs, event_type.name.lower(), False)]
     
-    def get_all_ws_clients(self) -> Dict[Any, Dict[str, bool]]:
+    def get_all_ws_clients(self) -> Dict[str, StreamConfig]:
         """
         Get all WebSocket clients and their subscriptions.
         

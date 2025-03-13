@@ -4,6 +4,8 @@ import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Optional
 
+import pydantic_core
+
 from survision_simulator.device_logic import DeviceLogic
 from survision_simulator.models import parse_message, requires_locking, is_prohibited_over_http
 
@@ -98,8 +100,8 @@ class SurvisionHTTPHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             
-            response_json = json.dumps(response)
-            self.wfile.write(response_json.encode("utf-8"))
+            response_json_bytes = pydantic_core.to_json(response, by_alias=True)
+            self.wfile.write(response_json_bytes)
         finally:
             # Implicit unlock if we locked the device
             if locked:

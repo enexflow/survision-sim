@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Dict, Literal, Optional, Any, Type, TypeVar, Union
+from typing import Dict, List, Literal, Optional, Any, Type, TypeVar, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator, TypeAdapter
+from pydantic import BaseModel, Field, field_validator, model_validator, TypeAdapter, ConfigDict
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -30,18 +30,18 @@ class DelPlateModel(BaseModel):
 
 
 class RecognitionDecision(BaseModel):
-    """Model for a recognition decision."""
+    model_config = ConfigDict(populate_by_name=True)
 
-    plate: str = Field(alias="@plate")
-    reliability: int = Field(alias="@reliability")
-    context: str = Field(alias="@context")
+    plate: str = Field(alias=str("@plate"))
+    reliability: int = Field(alias=str("@reliability"))
+    context: str = Field(alias=str("@context"))
     jpeg: Optional[str] = None
 
 
 class RecognitionEvent(BaseModel):
-    """Model for a recognition event."""
+    model_config = ConfigDict(populate_by_name=True)
 
-    date: datetime = Field(alias="@date")
+    date: datetime = Field(alias=str("@date"))
     decision: RecognitionDecision
 
     @field_validator("date", mode="before")
@@ -54,7 +54,7 @@ class RecognitionEvent(BaseModel):
 
 
 class AnprEvent(BaseModel):
-    """Model for an ANPR event."""
+    """Model for an ANPR (automatic number plate recognition) event."""
 
     anpr: RecognitionEvent
 
@@ -138,12 +138,18 @@ class InfosResponse(BaseModel):
     infos: DeviceInfoResponse
 
 
-class StreamConfig(BaseModel):
-    """Model for stream configuration."""
+class CameraStreamConfig(BaseModel):
+    id: str = Field(alias="@id")
+    enabled: bool = Field(alias="@enabled")
 
-    config_changes: bool = Field(default=False, alias="@configChanges")
-    info_changes: bool = Field(default=False, alias="@infoChanges")
-    traces: bool = Field(default=False, alias="@traces")
+
+class StreamConfig(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    config_changes: bool = Field(default=False, alias=str("@configChanges"))
+    info_changes: bool = Field(default=False, alias=str("@infoChanges"))
+    traces: bool = Field(default=False, alias=str("@traces"))
+    cameras: Dict[str, CameraStreamConfig] = Field(default_factory=dict)
 
     @field_validator("config_changes", "info_changes", "traces", mode="before")
     @classmethod
@@ -260,20 +266,16 @@ class TriggerOffMessage(BaseModel):
         return data
 
 
+class LockPassword(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    password: str = Field(alias=str("@password"))
+
+
 class LockMessage(ProhibitedOverHTTPMessage):
     """Model for lock message."""
 
-    lock: Dict[str, Any] = Field(alias="lock")
-
-    @model_validator(mode="before")
-    @classmethod
-    def set_defaults(cls, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Set default values if needed."""
-        if "lock" in data:
-            lock_data = data["lock"]
-            if lock_data is None:
-                data["lock"] = {}
-        return data
+    lock: LockPassword
 
 
 class UnlockMessage(BaseModel):
@@ -471,9 +473,14 @@ class ConfigAnswer(BaseModel):
         return DataAnswer(answer=self)
 
 
+class PlateReading(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    value: str = Field(alias=str("@value"))
+
 class DatabaseAnswer(BaseModel):
     """Model for database response."""
-    database: Dict[str, Any] = Field(...)
+    database: List[PlateReading]
 
     def as_answer(self) -> "DataAnswer":
         return DataAnswer(answer=self)

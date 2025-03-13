@@ -2,14 +2,15 @@ import asyncio
 import json
 import logging
 import threading
+import uuid
 from typing import Dict, Any, Optional, Set
 
 import websockets
 from websockets.legacy.server import WebSocketServerProtocol, serve
 
 from survision_simulator.device_logic import DeviceLogic
-from survision_simulator.data_store import DataStore
-from survision_simulator.models import ErrorResponse, StreamAnswer
+from survision_simulator.data_store import DataStore, EventType
+from survision_simulator.models import ErrorResponse, StreamAnswer, StreamConfig
 
 
 class SurvisionWebSocketServer:
@@ -34,6 +35,7 @@ class SurvisionWebSocketServer:
         self.data_store = data_store
         self.server = None
         self.clients: Set[WebSocketServerProtocol] = set()
+        self.client_ids: Dict[WebSocketServerProtocol, str] = {}
         self.running = False
         self.thread = None
         self.loop = None
@@ -70,9 +72,11 @@ class SurvisionWebSocketServer:
                     await websocket.close(1008, "Invalid endpoint")
                     return
                 
-                # Register client
+                # Register client with a unique ID
+                client_id = str(uuid.uuid4())
                 self.clients.add(websocket)
-                self.data_store.register_ws_client(websocket)
+                self.client_ids[websocket] = client_id
+                self.data_store.register_ws_client(client_id)
                 
                 try:
                     # Handle client messages
@@ -87,7 +91,13 @@ class SurvisionWebSocketServer:
                             
                             # Update client subscriptions if needed
                             if response and isinstance(response, StreamAnswer):
-                                self.data_store.update_ws_client_subscriptions(websocket, response.subscriptions)
+                                stream_config = StreamConfig(
+                                    config_changes=response.subscriptions.get("@configChanges", False),
+                                    info_changes=response.subscriptions.get("@infoChanges", False),
+                                    traces=response.subscriptions.get("@traces", False),
+                                    cameras={}
+                                )
+                                self.data_store.update_ws_client_subscriptions(client_id, stream_config)
                             
                             # Send response if needed
                             if response:
@@ -102,7 +112,9 @@ class SurvisionWebSocketServer:
                 finally:
                     # Unregister client
                     self.clients.remove(websocket)
-                    self.data_store.unregister_ws_client(websocket)
+                    client_id = self.client_ids.pop(websocket, None)
+                    if client_id:
+                        self.data_store.unregister_ws_client(client_id)
             
             # Start the server
             server = await serve(handler, self.host, self.port)
@@ -146,14 +158,22 @@ class SurvisionWebSocketServer:
             message_json = json.dumps(message)
             
             # Get clients to broadcast to
-            clients = []
+            clients_to_notify: Set[WebSocketServerProtocol] = set()
             if event_type:
-                clients = self.data_store.get_ws_clients_for_event(event_type)
+                try:
+                    event_enum = EventType[event_type]
+                    client_ids = self.data_store.get_ws_clients_for_event(event_enum)
+                    # Find the corresponding websocket objects
+                    for ws, client_id in self.client_ids.items():
+                        if client_id in client_ids:
+                            clients_to_notify.add(ws)
+                except (KeyError, ValueError):
+                    return
             else:
-                clients = list(self.clients)
+                clients_to_notify = self.clients.copy()
             
             # Send message to each client
-            for client in clients:
+            for client in clients_to_notify:
                 if client in self.clients:  # Check if client is still connected
                     try:
                         await client.send(message_json)
