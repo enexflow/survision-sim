@@ -190,6 +190,25 @@ header {
     border: 1px solid var(--border-color);
 }
 
+.json-container {
+    margin-top: 0.5rem;
+}
+
+.toggle-json {
+    background: var(--bg-darker);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.toggle-json:hover {
+    background: var(--bg-light);
+    color: var(--text-primary);
+}
+
 .success-event {
     border-left: 3px solid var(--success);
 }

@@ -4,7 +4,6 @@ const elements = {
     connectionStatus: document.getElementById('connection-status'),
     barrierStatus: document.getElementById('barrier-status'),
     lockStatus: document.getElementById('lock-status'),
-    plateInput: document.getElementById('plate-input'),
     triggerRecognition: document.getElementById('trigger-recognition'),
     openBarrier: document.getElementById('open-barrier'),
     closeBarrier: document.getElementById('close-barrier'),
@@ -130,12 +129,25 @@ function enableStreams() {
 // Handle WebSocket messages
 function handleWebSocketMessage(message) {
     if (message.anpr) {
-        const plate = message.anpr.decision ? message.anpr.decision['@plate'] : 'Unknown';
-        const reliability = message.anpr.decision ? message.anpr.decision['@reliability'] : 'Unknown';
-        addEvent('success', `Plate recognized: ${plate} (Reliability: ${reliability})`, message.anpr);
+        const anprData = message.anpr;
+        const decision = anprData.decision;
         
-        // Auto-refresh database after recognition
-        fetchDatabasePlates();
+        if (decision) {
+            const plate = decision['@plate'] || 'Unknown';
+            const reliability = decision['@reliability'] || 'Unknown';
+            const inDatabase = decision.database && decision.database['@plate'] === plate;
+            
+            if (inDatabase) {
+                addEvent('success', `Plate recognized: ${plate} (Reliability: ${reliability}%) - Found in database`, anprData);
+            } else {
+                addEvent('error', `Plate recognized: ${plate} (Reliability: ${reliability}%) - Not in database`, anprData);
+            }
+            
+            // Auto-refresh database after recognition
+            fetchDatabasePlates();
+        } else {
+            addEvent('warning', 'Recognition completed but no plate detected', anprData);
+        }
     } else if (message.infos) {
         updateDeviceStatus(message.infos);
     } else if (message.answer?.subscriptions) {
@@ -189,13 +201,6 @@ function updateConfigUI(config) {
 
 // Trigger plate recognition
 async function triggerRecognition() {
-    const plate = elements.plateInput.value.trim();
-    
-    if (!plate) {
-        addEvent('warning', 'Please enter a license plate');
-        return;
-    }
-    
     try {
         const response = await fetch('/sync', {
             method: 'POST',
@@ -211,8 +216,8 @@ async function triggerRecognition() {
         
         if (data.triggerAnswer && data.triggerAnswer['@status'] === 'ok') {
             const triggerId = data.triggerAnswer['@triggerId'];
-            addEvent('success', `Recognition started for plate: ${plate}`);
-            await simulateRecognition(plate, triggerId);
+            addEvent('success', `Recognition started (Trigger ID: ${triggerId})`);
+            await simulateRecognition(triggerId);
         } else {
             addEvent('error', 'Failed to start recognition');
         }
@@ -221,8 +226,8 @@ async function triggerRecognition() {
     }
 }
 
-// Simulate recognition with a specific plate
-async function simulateRecognition(plate, triggerId) {
+// Simulate recognition
+async function simulateRecognition(triggerId) {
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     try {
@@ -238,7 +243,7 @@ async function simulateRecognition(plate, triggerId) {
         const data = await response.json();
         
         if (data.triggerAnswer && data.triggerAnswer['@status'] === 'ok') {
-            addEvent('success', `Recognition completed for plate: ${plate}`);
+            addEvent('success', `Recognition completed (Trigger ID: ${triggerId})`);
             
             const logResponse = await fetch('/sync', {
                 method: 'POST',
@@ -248,9 +253,7 @@ async function simulateRecognition(plate, triggerId) {
             const logData = await logResponse.json();
             
             if (logData.anpr) {
-                addEvent('success', 'Recognition result:', logData.anpr);
-                // Auto-refresh database after recognition
-                await fetchDatabasePlates();
+                // Let the WebSocket handler display the recognition result
             } else if (logData.answer && logData.answer['@status'] === 'failed') {
                 addEvent('error', 'Recognition failed', logData.answer);
             }
@@ -595,10 +598,25 @@ function addEvent(type, message, jsonData = null) {
     event.appendChild(messageEl);
     
     if (jsonData) {
+        const jsonContainer = document.createElement('div');
+        jsonContainer.className = 'json-container';
+        
+        const toggleButton = document.createElement('button');
+        toggleButton.className = 'toggle-json';
+        toggleButton.textContent = 'Show Details';
+        toggleButton.addEventListener('click', () => {
+            jsonEl.style.display = jsonEl.style.display === 'none' ? 'block' : 'none';
+            toggleButton.textContent = jsonEl.style.display === 'none' ? 'Show Details' : 'Hide Details';
+        });
+        
         const jsonEl = document.createElement('div');
         jsonEl.className = 'event-json';
+        jsonEl.style.display = 'none';
         jsonEl.textContent = typeof jsonData === 'string' ? jsonData : JSON.stringify(jsonData, null, 2);
-        event.appendChild(jsonEl);
+        
+        jsonContainer.appendChild(toggleButton);
+        jsonContainer.appendChild(jsonEl);
+        event.appendChild(jsonContainer);
     }
     
     elements.eventTimeline.insertBefore(event, elements.eventTimeline.firstChild);
