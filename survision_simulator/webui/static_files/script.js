@@ -109,7 +109,7 @@ function handleWebSocketMessage(message) {
     if (message.anpr) {
         const plate = message.anpr.decision ? message.anpr.decision['@plate'] : 'Unknown';
         const reliability = message.anpr.decision ? message.anpr.decision['@reliability'] : 'Unknown';
-        addEvent('success', `Plate recognized: ${plate} (Reliability: ${reliability})`);
+        addEvent('success', `Plate recognized: ${plate} (Reliability: ${reliability})`, message.anpr);
     } else if (message.infos) {
         updateDeviceStatus(message.infos);
     }
@@ -198,9 +198,7 @@ function triggerRecognition() {
 
 // Simulate recognition with a specific plate
 function simulateRecognition(plate, triggerId) {
-    // Wait a short time to simulate processing
     setTimeout(() => {
-        // End the trigger
         fetch('/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -215,7 +213,6 @@ function simulateRecognition(plate, triggerId) {
             if (data.triggerAnswer && data.triggerAnswer['@status'] === 'ok') {
                 addEvent('success', `Recognition completed for plate: ${plate}`);
                 
-                // Get the current log to see the recognition
                 fetch('/sync', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -224,9 +221,9 @@ function simulateRecognition(plate, triggerId) {
                 .then(response => response.json())
                 .then(data => {
                     if (data.anpr) {
-                        addEvent('success', `Recognition result: ${JSON.stringify(data.anpr)}`);
+                        addEvent('success', 'Recognition result:', data.anpr);
                     } else if (data.answer && data.answer['@status'] === 'failed') {
-                        addEvent('error', `Recognition failed: ${data.answer['@errorText']}`);
+                        addEvent('error', 'Recognition failed', data.answer);
                     }
                 });
             }
@@ -243,15 +240,15 @@ function openBarrier() {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.answer?.status === 'ok') {
+        if (data.answer && data.answer['@status'] === 'ok') {
             updateBarrierStatus(true);
             addEvent('success', 'Barrier opened');
         } else {
-            addEvent('error', `Failed to open barrier: ${data.answer?.errorText ?? 'Unknown error'}`);
+            addEvent('error', 'Failed to open barrier', data);
         }
     })
     .catch(error => {
-        addEvent('error', `Error opening barrier: ${error.message}`);
+        addEvent('error', 'Error opening barrier', error);
     });
 }
 
@@ -317,7 +314,7 @@ function updateIPAddress() {
     });
 }
 
-function addEvent(type, message) {
+function addEvent(type, message, jsonData = null) {
     const event = document.createElement('div');
     event.className = `event ${type}-event`;
     
@@ -331,6 +328,13 @@ function addEvent(type, message) {
     
     event.appendChild(time);
     event.appendChild(messageEl);
+    
+    if (jsonData) {
+        const jsonEl = document.createElement('div');
+        jsonEl.className = 'event-json';
+        jsonEl.textContent = typeof jsonData === 'string' ? jsonData : JSON.stringify(jsonData, null, 2);
+        event.appendChild(jsonEl);
+    }
     
     elements.eventTimeline.insertBefore(event, elements.eventTimeline.firstChild);
     

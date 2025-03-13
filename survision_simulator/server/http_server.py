@@ -5,6 +5,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Optional
 
 from survision_simulator.device_logic import DeviceLogic
+from survision_simulator.models import parse_message, requires_locking, is_prohibited_over_http
 
 
 class SurvisionHTTPHandler(BaseHTTPRequestHandler):
@@ -57,25 +58,77 @@ class SurvisionHTTPHandler(BaseHTTPRequestHandler):
             return
         
         # Read request body
-        request_body = self.rfile.read(content_length).decode("utf-8")
+        request_body = self.rfile.read(content_length)
         
         # Parse JSON
         try:
-            message = json.loads(request_body)
+            message = parse_message(request_body)
         except json.JSONDecodeError:
             self.send_error(400, "Invalid JSON format")
             return
+        except ValueError as e:
+            self.send_error(400, str(e))
+            return
         
-        # Process message
-        response, status_code = self.device_logic.process_message(message)
+        # Check for prohibited operations
+        if is_prohibited_over_http(message):
+            message_type = type(message).__name__
+            if message_type.endswith("Message"):
+                message_type = message_type[:-7]  # Remove "Message"
+            self.send_error(400, f"Operation {message_type} is prohibited over HTTP")
+            return
         
-        # Send response
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
+        # Handle implicit locking if needed
+        password = self.headers.get("Password")
+        locked = False
         
-        response_json = json.dumps(response)
-        self.wfile.write(response_json.encode("utf-8"))
+        if requires_locking(message):
+            # Try to lock the device
+            locked = self._implicit_lock(password)
+            if not locked:
+                self.send_error(403, "Device is locked or invalid password")
+                return
+        
+        try:
+            # Process message
+            response, status_code = self.device_logic.process_message(message)
+            
+            # Send response
+            self.send_response(status_code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            
+            response_json = json.dumps(response)
+            self.wfile.write(response_json.encode("utf-8"))
+        finally:
+            # Implicit unlock if we locked the device
+            if locked:
+                self._implicit_unlock()
+    
+    def _implicit_lock(self, password: Optional[str]) -> bool:
+        """
+        Implicitly lock the device.
+        
+        Args:
+            password: The password to use for locking
+            
+        Returns:
+            True if the device was successfully locked, False otherwise
+        """
+        if not self.device_logic:
+            return False
+        
+        # Check if device is already locked
+        if self.device_logic.data_store.is_device_locked():
+            return False
+        
+        # Lock the device
+        return self.device_logic.data_store.lock_device(password)
+    
+    def _implicit_unlock(self) -> None:
+        """Implicitly unlock the device."""
+        if self.device_logic:
+            self.device_logic.data_store.unlock_device()
     
     def _serve_static_file(self, file_path: str) -> None:
         """

@@ -77,11 +77,12 @@ class SurvisionWebSocketServer:
                     # Handle client messages
                     async for message in websocket:
                         try:
-                            # Parse JSON message
-                            data = json.loads(message)
-                            
                             # Process message
-                            response = self.device_logic.process_websocket_message(data)
+                            msg_bytes = message if isinstance(message, bytes) else message.encode("utf-8")
+                            
+                            # For WebSockets, locking must be explicit via the lock message
+                            # We don't need to check for locked operations here as that's handled by the device logic
+                            response = self.device_logic.process_websocket_message(msg_bytes)
                             
                             # Update client subscriptions if needed
                             if response and "subscriptions" in response:
