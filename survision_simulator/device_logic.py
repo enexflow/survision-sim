@@ -1,7 +1,7 @@
 import base64
 import random
 import time
-from typing import Dict, Any, Optional, Tuple, Callable
+from typing import Dict, Any, Optional, Tuple, Callable, Union
 import logging
 from datetime import datetime
 
@@ -12,11 +12,14 @@ from survision_simulator.models import (
     AnprInfo,
     AnswerType,
     CameraInfo,
+    CharacterReliability,
+    DatabaseMatch,
     DeviceInfo,
     DeviceInfoResponse,
     ErrorResponse,
     NetworkInfo,
     PlateReading,
+    ReliabilityPerCharacter,
     SecurityInfo,
     StatusAnswer,
     GetDataBaseModel,
@@ -58,7 +61,6 @@ from survision_simulator.models import (
     InfosAnswer,
     LogAnswer,
     TracesAnswer,
-    StreamAnswer,
     DatabaseAnswer,
     AnprEvent,
     RecognitionEvent,
@@ -104,7 +106,7 @@ class DeviceLogic:
         # Sample image data (base64 encoded)
         self.sample_image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
-    def process_message(self, message: MessageType) -> Tuple[AnswerType, int]:
+    def process_message(self, message: MessageType) -> Tuple[Union[AnswerType, None], int]:
         """
         Process an incoming CDK message.
 
@@ -218,13 +220,8 @@ class DeviceLogic:
         self.logger.info(f"Generating recognition event. Provided plate: {plate}")
         # Generate random plate if none provided
         if plate is None:
-            letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-            numbers = "0123456789"
-            plate = (
-                "".join(random.choice(letters) for _ in range(2))
-                + "".join(random.choice(numbers) for _ in range(3))
-                + "".join(random.choice(letters) for _ in range(2))
-            )
+            all_plates = ["XX 000 XX", "XX 000 XY"]
+            plate = random.choice(all_plates)
 
         # Get configuration values
         reliability = int(self.config_manager.get_value("plateReliability", 80))
@@ -239,6 +236,13 @@ class DeviceLogic:
                     reliability=reliability,
                     context=context,
                     jpeg=self.sample_image,
+                    reliability_per_character=ReliabilityPerCharacter(
+                        char=[CharacterReliability(index=i, reliability=reliability) for i, _l in enumerate(plate)]
+                    ),
+                    database=DatabaseMatch(
+                        plate=plate,
+                        distance=0,
+                    ) if plate in self.data_store.get_database_plates() else None
                 ),
             )
         )
@@ -325,7 +329,7 @@ class DeviceLogic:
             "database": {"@enabled": "0", "@openForAll": "0"},
             "io": {"defaultImpulse": {"@pulseMode": "rising", "@duration_ms": "500"}},
         }
-        return ConfigAnswer(config=config).as_answer()
+        return ConfigAnswer(config=config)
 
     def _handle_get_current_log(self, message: GetCurrentLogMessage) -> AnswerType:
         """
@@ -345,7 +349,7 @@ class DeviceLogic:
             else:
                 return self._create_error_response("No current recognition")
 
-        return LogAnswer(anpr=recognition.anpr).as_answer()
+        return LogAnswer(anpr=recognition.anpr)
 
     def _handle_get_database(self, message: GetDataBaseModel) -> AnswerType:
         """
@@ -363,7 +367,7 @@ class DeviceLogic:
         return DatabaseAnswer(database=[
             PlateReading(value=plate)
             for plate in plates
-        ]).as_answer()
+        ])
 
     def _handle_get_date(self, message: GetDateMessage) -> AnswerType:
         """
@@ -379,7 +383,7 @@ class DeviceLogic:
             "Handling GetDateMessage to retrieve the current simulated date"
         )
         date = {"@date": str(self.data_store.get_simulated_date())}
-        return DateAnswer(date=date).as_answer()
+        return DateAnswer(date=date)
 
     def _handle_get_image(self, message: GetImageMessage) -> AnswerType:
         """
@@ -396,7 +400,7 @@ class DeviceLogic:
             "@date": str(self.data_store.get_simulated_date()),
             "jpeg": self.sample_image,
         }
-        return ImageAnswer(image=image).as_answer()
+        return ImageAnswer(image=image)
 
     def _handle_get_infos(self, message: GetInfosMessage) -> AnswerType:
         """
@@ -431,7 +435,7 @@ class DeviceLogic:
             security=SecurityInfo(lock_password_needed=False, rsa_crypted=False),
             anpr=AnprInfo(version="1.0", possible_contexts="F>OTHERS"),
         )
-        return InfosAnswer(infos=infos).as_answer()
+        return InfosAnswer(infos=infos)
 
     def _handle_get_log(self, message: GetLogMessage) -> AnswerType:
         """
@@ -451,7 +455,7 @@ class DeviceLogic:
             else:
                 return self._create_error_response("No current recognition")
 
-        return LogAnswer(anpr=recognition.anpr).as_answer()
+        return LogAnswer(anpr=recognition.anpr)
 
     def _handle_get_traces(self, message: GetTracesMessage) -> AnswerType:
         """
@@ -468,7 +472,7 @@ class DeviceLogic:
             "currentExecution_old": "BASE64_TRACES_OLD",
             "currentExecution_current": "BASE64_TRACES_NEW",
         }
-        return TracesAnswer(traces=traces).as_answer()
+        return TracesAnswer(traces=traces)
 
     def _handle_get_xsd(self, message: GetXSDMessage) -> AnswerType:
         """
@@ -484,7 +488,7 @@ class DeviceLogic:
         xsd_content = '<?xml version="1.0" encoding="UTF-8"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"></xs:schema>'
         xsd_base64 = base64.b64encode(xsd_content.encode()).decode()
 
-        return XSDAnswer(xsd=xsd_base64).as_answer()
+        return XSDAnswer(xsd=xsd_base64)
 
     def _handle_open_barrier(self, message: OpenBarrierMessage) -> StatusAnswer:
         """
@@ -611,11 +615,9 @@ class DeviceLogic:
         self.logger.info("Handling ResetEngineMessage to reset the engine state")
         empty_recognition = AnprEvent(
             anpr=RecognitionEvent(
-                date=datetime.fromtimestamp(
-                    self.data_store.get_simulated_date() / 1000
-                ),
+                date=datetime.fromtimestamp(0),
                 decision=RecognitionDecision(
-                    plate="", reliability=0, context="", jpeg=None
+                    plate="", reliability=0, context="F", jpeg=None
                 ),
             )
         )
@@ -754,7 +756,7 @@ class DeviceLogic:
         )
         return self._create_success_response()
 
-    def _handle_set_enable_streams(self, stream_config: StreamConfig) -> AnswerType:
+    def _handle_set_enable_streams(self, stream_config: StreamConfig) -> None:
         """
         Handle setEnableStreams message.
 
@@ -767,13 +769,8 @@ class DeviceLogic:
         self.logger.info(
             "Handling SetEnableStreamsRequest to configure stream settings"
         )
-        subscriptions = {
-            "configChanges": stream_config.config_changes,
-            "infoChanges": stream_config.info_changes,
-            "traces": stream_config.traces,
-        }
+        self.data_store.set_stream_config(stream_config)
 
-        return StreamAnswer(subscriptions=subscriptions).as_answer()
 
     def _handle_update(self, message: UpdateMessage) -> AnswerType:
         self.logger.info("Handling UpdateMessage to update device state")

@@ -4,5 +4,5 @@
   "wsPort": 10001,
   "recognitionSuccessRate": 75,
   "defaultContext": "F",
-  "plateReliability": 80
+  "plateReliability": 41
 }

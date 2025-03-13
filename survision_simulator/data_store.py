@@ -432,6 +432,13 @@ class DataStore:
             if client in self._ws_clients:
                 self._ws_clients[client] = subscriptions
     
+    def set_stream_config(self, stream_config: StreamConfig) -> None:
+        """
+        Set the stream configuration.
+        """
+        with self._lock:
+            self._stream_config = stream_config
+
     def get_ws_clients_for_event(self, event_type: EventType) -> List[str]:
         """
         Get WebSocket clients subscribed to a specific event type.

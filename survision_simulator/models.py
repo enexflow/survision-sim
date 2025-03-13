@@ -1,7 +1,14 @@
 from datetime import datetime
 from typing import Dict, List, Literal, Optional, Any, Type, TypeVar, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator, TypeAdapter, ConfigDict
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+    TypeAdapter,
+    ConfigDict,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -29,19 +36,66 @@ class DelPlateModel(BaseModel):
     del_plate: PlateModel = Field(alias="delPlate")
 
 
+class DatabaseMatch(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    plate: str = Field(alias=str("@plate"))
+    distance: Optional[int] = Field(alias=str("@distance"))
+
+class CharacterReliability(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    index: int = Field(alias=str("@index"))
+    reliability: int = Field(alias=str("@reliability"))
+
+class ReliabilityPerCharacter(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    char: List[CharacterReliability]
+
+class Speed(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    
+    instant_speed_km_h: Optional[int] = Field(alias=str("@instantSpeed_km_h"))
+    interdistance_ms: Optional[int] = Field(alias=str("@interdistance_ms"))
+    reliability_speed: Optional[int] = Field(alias=str("@reliability_speed"))
+    plate_from: Optional[str] = Field(alias=str("@plateFrom"))
+
 class RecognitionDecision(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    plate: str = Field(alias=str("@plate"))
-    reliability: int = Field(alias=str("@reliability"))
-    context: str = Field(alias=str("@context"))
+    plate: Optional[str] = Field(alias=str("@plate"))
+    x: Optional[int] = Field(alias=str("@x"), default=None)
+    y: Optional[int] = Field(alias=str("@y"), default=None)
+    x_origin: Optional[int] = Field(alias=str("@xOrigin"), default=None)
+    y_origin: Optional[int] = Field(alias=str("@yOrigin"), default=None)
+    width: Optional[int] = Field(alias=str("@width"), default=None)
+    height: Optional[int] = Field(alias=str("@height"), default=None)
+    sinus: Optional[float] = Field(alias=str("@sinus"), default=None)
+    reliability: Optional[int] = Field(alias=str("@reliability"), default=None)
+    direction: Optional[str] = Field(alias=str("@direction"), default=None)
+    context: Optional[str] = Field(alias=str("@context"), default=None)
+    context_iso_alpha2: Optional[str] = Field(alias=str("@context_isoAlpha2"), default=None)
+    context_iso_alpha3: Optional[str] = Field(alias=str("@context_isoAlpha3"), default=None)
+    plate_occurences: Optional[int] = Field(alias=str("@plateOccurences"), default=None)
+    plate_from: Optional[str] = Field(alias=str("@plateFrom"), default=None)
+    plate_background: Optional[str] = Field(alias=str("@plateBackground"), default=None)
+    contrast: Optional[int] = Field(alias=str("@contrast"), default=None)
+    square_plate: Optional[bool] = Field(alias=str("@squarePlate"), default=None)
+    
+    database: Optional[DatabaseMatch] = None
+    reliability_per_character: Optional[ReliabilityPerCharacter] = None
     jpeg: Optional[str] = None
+    context_jpeg: Optional[str] = None
+    speed: Optional[Speed] = None
 
 
 class RecognitionEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    date: datetime = Field(alias=str("@date"))
+    date: datetime = Field(alias=str("@date"), default_factory=datetime.now)
+    id: int = Field(alias=str("@id"), default=0)
+    session: int = Field(alias=str("@session"), default=0)
     decision: RecognitionDecision
 
     @field_validator("date", mode="before")
@@ -82,7 +136,9 @@ class CameraInfo(BaseModel):
     """Model for camera information."""
 
     id: str = Field(serialization_alias="@id")
-    enabled_algorithms: Dict[str, Optional[Any]] = Field(serialization_alias="enabledAlgorithms")
+    enabled_algorithms: Dict[str, Optional[Any]] = Field(
+        serialization_alias="enabledAlgorithms"
+    )
 
 
 class NetworkInfo(BaseModel):
@@ -400,33 +456,51 @@ class SetupMessage(ProhibitedOverHTTPMessage):
 
 class IEEE8021XConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    
-    certificate_password: Optional[str] = Field(default=None, alias=str("@certificatePassword"))
+
+    certificate_password: Optional[str] = Field(
+        default=None, alias=str("@certificatePassword")
+    )
     identity: Optional[str] = Field(default=None, alias=str("@identity"))
     authentication: str = Field(alias=str("@authentication"))
     pfx: Optional[str] = Field(default=None, alias="PFX")
     certificate: Optional[str] = Field(default=None, alias="certificate")
     private_key: Optional[str] = Field(default=None, alias="privateKey")
-    certificate_authority: Optional[str] = Field(default=None, alias="certificateAuthority")
+    certificate_authority: Optional[str] = Field(
+        default=None, alias="certificateAuthority"
+    )
 
 
 class SecurityConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    
-    new_lock_password: Optional[str] = Field(default=None, alias=str("@newLockPassword"))
-    current_lock_password: Optional[str] = Field(default=None, alias=str("@currentLockPassword"))
-    lock_password_hint: Optional[str] = Field(default=None, alias=str("@lockPasswordHint"))
+
+    new_lock_password: Optional[str] = Field(
+        default=None, alias=str("@newLockPassword")
+    )
+    current_lock_password: Optional[str] = Field(
+        default=None, alias=str("@currentLockPassword")
+    )
+    lock_password_hint: Optional[str] = Field(
+        default=None, alias=str("@lockPasswordHint")
+    )
     rsa_hint: Optional[str] = Field(default=None, alias=str("@rsaHint"))
-    rsa_public_key_password: Optional[str] = Field(default=None, alias=str("@rsaPublicKeyPassword"))
-    ssl_certificate_password: Optional[str] = Field(default=None, alias=str("@sslCertificatePassword"))
-    ssl_certificate_reset: Optional[bool] = Field(default=None, alias=str("@sslCertificateReset"))
+    rsa_public_key_password: Optional[str] = Field(
+        default=None, alias=str("@rsaPublicKeyPassword")
+    )
+    ssl_certificate_password: Optional[str] = Field(
+        default=None, alias=str("@sslCertificatePassword")
+    )
+    ssl_certificate_reset: Optional[bool] = Field(
+        default=None, alias=str("@sslCertificateReset")
+    )
     ssl_pfx: Optional[str] = Field(default=None, alias="sslPFX")
     ssl_certificate: Optional[str] = Field(default=None, alias="sslCertificate")
     ssl_private_key: Optional[str] = Field(default=None, alias="sslPrivateKey")
-    ssl_certificate_authority: Optional[str] = Field(default=None, alias="sslCertificateAuthority")
+    ssl_certificate_authority: Optional[str] = Field(
+        default=None, alias="sslCertificateAuthority"
+    )
     rsa_public_key: Optional[str] = Field(default=None, alias="rsaPublicKey")
     ieee8021x: Optional[IEEE8021XConfig] = Field(default=None, alias="IEEE8021X")
-    
+
     @field_validator("ssl_certificate_reset", mode="before")
     @classmethod
     def parse_bool(cls, value: Any) -> Optional[bool]:
@@ -440,7 +514,7 @@ class SecurityConfig(BaseModel):
 
 class TestFTPConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    
+
     address: str = Field(alias=str("@address"))
     port: Optional[int] = Field(default=None, alias=str("@port"))
     login: Optional[str] = Field(default=None, alias=str("@login"))
@@ -451,50 +525,58 @@ class TestFTPConfig(BaseModel):
 
 class TestNTPConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    
+
     host: str = Field(alias=str("@host"))
 
 
 class UpdateWebFirmwareConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    
+
     url: str = Field(alias=str("@url"))
 
 
 class SetSecurityMessage(LockedOperationMessage):
     """Model for setSecurity message."""
+
     set_security: SecurityConfig = Field(alias="setSecurity")
 
 
 class TestFTPMessage(BaseModel):
     """Model for testFTP message."""
+
     test_ftp: TestFTPConfig = Field(alias="testFTP")
 
 
 class TestNTPMessage(BaseModel):
     """Model for testNTP message."""
+
     test_ntp: TestNTPConfig = Field(alias="testNTP")
 
 
 class UpdateWebFirmwareMessage(BaseModel):
     """Model for updateWebFirmware message."""
+
     update_web_firmware: UpdateWebFirmwareConfig = Field(alias="updateWebFirmware")
 
 
 class EraseDatabaseMessage(LockedOperationMessage):
     """Model for eraseDatabase message."""
+
     erase_database: None = Field(default=None, alias="eraseDatabase")
 
 
 class RebootMessage(LockedOperationMessage):
     """Model for reboot message."""
+
     reboot: None = Field(default=None, alias="reboot")
 
 
 class Warning(BaseModel):
     text: str = Field(serialization_alias="@text")
     config_path: Optional[str] = Field(default=None, serialization_alias="@configPath")
-    source_location: Optional[str] = Field(default=None, serialization_alias="@sourceLocation")
+    source_location: Optional[str] = Field(
+        default=None, serialization_alias="@sourceLocation"
+    )
 
     def as_answer(self) -> "StatusAnswer":
         return StatusAnswer(answer=self)
@@ -519,7 +601,7 @@ class ErrorResponse(BaseModel):
     def for_error_text(cls, error_text: str) -> "ErrorResponse":
         """Create an error response for a given error text."""
         return cls(error_text=error_text)
-    
+
     def as_answer(self) -> "StatusAnswer":
         return StatusAnswer(answer=self)
 
@@ -533,7 +615,7 @@ class StatusAnswer(BaseModel):
 class TriggerAnswerData(BaseModel):
     """Model for trigger response data."""
 
-    status: Literal["ok", "failed"] = Field(serialization_alias="@status") 
+    status: Literal["ok", "failed"] = Field(serialization_alias="@status")
     trigger_id: int = Field(serialization_alias="@triggerId")
     error_text: Optional[str] = Field(default=None, serialization_alias="@errorText")
 
@@ -541,12 +623,12 @@ class TriggerAnswerData(BaseModel):
     def ok_for_id(cls, id: int) -> "TriggerAnswerData":
         """Check if the trigger answer is ok for a given id."""
         return cls(status="ok", trigger_id=id)
-    
+
     @classmethod
     def failed_for_id(cls, id: int) -> "TriggerAnswerData":
         """Check if the trigger answer is failed for a given id."""
         return cls(status="failed", trigger_id=id)
-    
+
     def as_answer(self) -> "TriggerAnswer":
         """Convert the trigger answer data to a trigger answer."""
         return TriggerAnswer(triggerAnswer=self)
@@ -560,10 +642,8 @@ class TriggerAnswer(BaseModel):
 
 class ConfigAnswer(BaseModel):
     """Model for config response."""
-    config: Dict[str, Any] = Field(...)
 
-    def as_answer(self) -> "DataAnswer":
-        return DataAnswer(answer=self)
+    config: Dict[str, Any]
 
 
 class PlateReading(BaseModel):
@@ -571,76 +651,68 @@ class PlateReading(BaseModel):
 
     value: str = Field(alias=str("@value"))
 
+
 class DatabaseAnswer(BaseModel):
     """Model for database response."""
-    database: List[PlateReading]
 
-    def as_answer(self) -> "DataAnswer":
-        return DataAnswer(answer=self)
+    database: List[PlateReading]
 
 
 class DateAnswer(BaseModel):
     """Model for date response."""
-    date: Dict[str, Any] = Field(...)
 
-    def as_answer(self) -> "DataAnswer":
-        return DataAnswer(answer=self)
+    date: Dict[str, Any]
 
 
 class ImageAnswer(BaseModel):
     """Model for image response."""
-    image: Dict[str, Any] = Field(...)
 
-    def as_answer(self) -> "DataAnswer":
-        return DataAnswer(answer=self)
+    image: Dict[str, Any] = Field(...)
 
 
 class InfosAnswer(BaseModel):
     """Model for infos response."""
-    infos: DeviceInfoResponse = Field(...)
 
-    def as_answer(self) -> "DataAnswer":
-        return DataAnswer(answer=self)
+    infos: DeviceInfoResponse = Field(...)
 
 
 class LogAnswer(BaseModel):
     """Model for log response."""
-    anpr: RecognitionEvent = Field(...)
 
-    def as_answer(self) -> "DataAnswer":
-        return DataAnswer(answer=self)
+    anpr: RecognitionEvent = Field(...)
 
 
 class TracesAnswer(BaseModel):
     """Model for traces response."""
-    traces: Dict[str, Any] = Field(...)
 
-    def as_answer(self) -> "DataAnswer":
-        return DataAnswer(answer=self)
+    traces: Dict[str, Any] = Field(...)
 
 
 class XSDAnswer(BaseModel):
     """Model for XSD response."""
-    xsd: str = Field(...)
 
-    def as_answer(self) -> "DataAnswer":
-        return DataAnswer(answer=self)
+    xsd: str = Field(...)
 
 
 class StreamAnswer(BaseModel):
     """Model for stream response."""
+
     subscriptions: Dict[str, bool] = Field(...)
 
-    def as_answer(self) -> "DataAnswer":
-        return DataAnswer(answer=self)
 
-
-class DataAnswer(BaseModel):
-    """Model for data responses."""
-    answer: Union[ConfigAnswer, DatabaseAnswer, DateAnswer, ImageAnswer, InfosAnswer, LogAnswer, TracesAnswer, XSDAnswer, StreamAnswer]
-
-
-AnswerType = Union[StatusAnswer, TriggerAnswer, DataAnswer]
+AnswerType = Union[
+    StatusAnswer,
+    TriggerAnswer,
+    ConfigAnswer,
+    DatabaseAnswer,
+    DateAnswer,
+    ImageAnswer,
+    InfosAnswer,
+    LogAnswer,
+    TracesAnswer,
+    XSDAnswer,
+    StreamAnswer,
+]
 
 MessageType = Union[
     GetConfigMessage,
@@ -718,4 +790,3 @@ def is_prohibited_over_http(message: MessageType) -> bool:
         True if the message is prohibited over HTTP, False otherwise
     """
     return isinstance(message, ProhibitedOverHTTPMessage)
-

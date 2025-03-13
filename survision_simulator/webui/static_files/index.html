@@ -92,26 +92,6 @@
                         System Configuration
                     </h2>
                     <div class="form-group">
-                        <label for="recognition-rate">Recognition Success Rate</label>
-                        <div class="range-group">
-                            <input type="range" id="recognition-rate" min="0" max="100" value="75">
-                            <span id="recognition-rate-value">75%</span>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="context-select">Default Context</label>
-                        <select id="context-select">
-                            <option value="F">France (F)</option>
-                            <option value="GB">Great Britain (GB)</option>
-                            <option value="US">United States (US)</option>
-                            <option value="DE">Germany (DE)</option>
-                            <option value="ES">Spain (ES)</option>
-                            <option value="IT">Italy (IT)</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
                         <label for="plate-reliability">Plate Reliability</label>
                         <div class="range-group">
                             <input type="range" id="plate-reliability" min="0" max="100" value="80">
@@ -123,6 +103,86 @@
                         <i class="fas fa-save"></i>
                         Save Configuration
                     </button>
+                </div>
+
+                <div class="panel">
+                    <h2>
+                        <i class="fas fa-broadcast-tower"></i>
+                        WebSocket Streams
+                    </h2>
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="config-changes" checked>
+                            <label for="config-changes">Config Changes</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="info-changes" checked>
+                            <label for="info-changes">Info Changes</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="traces">
+                            <label for="traces">Traces</label>
+                        </div>
+                    </div>
+                    <button id="enable-streams">
+                        <i class="fas fa-play"></i>
+                        Enable Streams
+                    </button>
+                </div>
+
+                <div class="panel">
+                    <h2>
+                        <i class="fas fa-database"></i>
+                        License Plate Database
+                    </h2>
+                    <div class="form-group">
+                        <label for="db-plate-input">Add Plate to Database</label>
+                        <div class="input-group">
+                            <input type="text" id="db-plate-input" placeholder="Enter license plate">
+                            <button id="add-plate">
+                                <i class="fas fa-plus"></i>
+                                Add
+                            </button>
+                        </div>
+                    </div>
+                    <div class="database-list">
+                        <div class="database-header">
+                            <h3>Stored Plates</h3>
+                            <button id="refresh-database">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                        <div id="plates-list" class="plates-list"></div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>
+                        <i class="fas fa-tools"></i>
+                        Device Operations
+                    </h2>
+                    <div class="button-grid">
+                        <button id="get-infos">
+                            <i class="fas fa-info-circle"></i>
+                            Get Infos
+                        </button>
+                        <button id="get-log">
+                            <i class="fas fa-clipboard-list"></i>
+                            Get Log
+                        </button>
+                        <button id="get-traces">
+                            <i class="fas fa-bug"></i>
+                            Get Traces
+                        </button>
+                        <button id="trigger-on">
+                            <i class="fas fa-power-off"></i>
+                            Trigger On
+                        </button>
+                        <button id="trigger-off">
+                            <i class="fas fa-power-off"></i>
+                            Trigger Off
+                        </button>
+                    </div>
                 </div>
             </div>
         </main>
