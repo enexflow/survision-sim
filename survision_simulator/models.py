@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, Literal, Optional, Any, Type, TypeVar, Union, Set
+from typing import Dict, Literal, Optional, Any, Type, TypeVar, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator, TypeAdapter
 
@@ -62,12 +62,12 @@ class AnprEvent(BaseModel):
 class DeviceInfo(BaseModel):
     """Model for device information."""
 
-    type: str = Field(alias="@type")
-    firmware_version: str = Field(alias="@firmwareVersion")
-    serial: str = Field(alias="@serial")
-    mac_address: str = Field(alias="@macAddress")
-    status: str = Field(alias="@status")
-    locked: bool = Field(alias="@locked")
+    type: str = Field(serialization_alias="@type")
+    firmware_version: str = Field(serialization_alias="@firmwareVersion")
+    serial: str = Field(serialization_alias="@serial")
+    mac_address: str = Field(serialization_alias="@macAddress")
+    status: str = Field(serialization_alias="@status")
+    locked: bool = Field(serialization_alias="@locked")
 
     @field_validator("locked", mode="before")
     @classmethod
@@ -81,15 +81,15 @@ class DeviceInfo(BaseModel):
 class CameraInfo(BaseModel):
     """Model for camera information."""
 
-    id: str = Field(alias="@id")
-    enabled_algorithms: Dict[str, Optional[Any]] = Field(alias="enabledAlgorithms")
+    id: str = Field(serialization_alias="@id")
+    enabled_algorithms: Dict[str, Optional[Any]] = Field(serialization_alias="enabledAlgorithms")
 
 
 class NetworkInfo(BaseModel):
     """Model for network information."""
 
-    mac_address: str = Field(alias="@macAddress")
-    connected: bool = Field(alias="@connected")
+    mac_address: str = Field(serialization_alias="@macAddress")
+    connected: bool = Field(serialization_alias="@connected")
 
     @field_validator("connected", mode="before")
     @classmethod
@@ -103,8 +103,8 @@ class NetworkInfo(BaseModel):
 class SecurityInfo(BaseModel):
     """Model for security information."""
 
-    lock_password_needed: bool = Field(alias="@lockPasswordNeeded")
-    rsa_crypted: bool = Field(alias="@rsaCrypted")
+    lock_password_needed: bool = Field(serialization_alias="@lockPasswordNeeded")
+    rsa_crypted: bool = Field(serialization_alias="@rsaCrypted")
 
     @field_validator("lock_password_needed", "rsa_crypted", mode="before")
     @classmethod
@@ -118,8 +118,8 @@ class SecurityInfo(BaseModel):
 class AnprInfo(BaseModel):
     """Model for ANPR information."""
 
-    version: str = Field(alias="@version")
-    possible_contexts: str = Field(alias="@possibleContexts")
+    version: str = Field(serialization_alias="@version")
+    possible_contexts: str = Field(serialization_alias="@possibleContexts")
 
 
 class DeviceInfoResponse(BaseModel):
@@ -156,11 +156,13 @@ class StreamConfig(BaseModel):
 
 class LockedOperationMessage(BaseModel):
     """Base class for messages that require device locking."""
+
     pass
 
 
 class ProhibitedOverHTTPMessage(BaseModel):
     """Base class for messages that are prohibited over HTTP."""
+
     pass
 
 
@@ -173,7 +175,9 @@ class GetConfigMessage(BaseModel):
 class GetCurrentLogMessage(BaseModel):
     """Model for getCurrentLog message."""
 
-    get_current_log: Optional[Dict[str, Any]] = Field(default=None, alias="getCurrentLog")
+    get_current_log: Optional[Dict[str, Any]] = Field(
+        default=None, alias="getCurrentLog"
+    )
 
 
 class GetDataBaseModel(BaseModel):
@@ -347,19 +351,25 @@ class ResetCountersMessage(BaseModel):
 class AllowSetConfigMessage(LockedOperationMessage):
     """Model for allowSetConfig message."""
 
-    allow_set_config: Optional[Dict[str, Any]] = Field(default=None, alias="allowSetConfig")
+    allow_set_config: Optional[Dict[str, Any]] = Field(
+        default=None, alias="allowSetConfig"
+    )
 
 
 class ForbidSetConfigMessage(LockedOperationMessage):
     """Model for forbidSetConfig message."""
 
-    forbid_set_config: Optional[Dict[str, Any]] = Field(default=None, alias="forbidSetConfig")
+    forbid_set_config: Optional[Dict[str, Any]] = Field(
+        default=None, alias="forbidSetConfig"
+    )
 
 
 class CalibrateZoomFocusMessage(LockedOperationMessage):
     """Model for calibrateZoomFocus message."""
 
-    calibrate_zoom_focus: Optional[Dict[str, Any]] = Field(default=None, alias="calibrateZoomFocus")
+    calibrate_zoom_focus: Optional[Dict[str, Any]] = Field(
+        default=None, alias="calibrateZoomFocus"
+    )
 
 
 class SetEnableStreamsRequest(BaseModel):
@@ -385,19 +395,152 @@ class SetupMessage(ProhibitedOverHTTPMessage):
 
     setup: Dict[str, Any] = Field(alias="setup")
 
-class Response(BaseModel):
-    """Base model for responses."""
+
+class Warning(BaseModel):
+    text: str = Field(serialization_alias="@text")
+    config_path: Optional[str] = Field(default=None, serialization_alias="@configPath")
+    source_location: Optional[str] = Field(default=None, serialization_alias="@sourceLocation")
+
+    def as_answer(self) -> "StatusAnswer":
+        return StatusAnswer(answer=self)
 
 
-class SuccessResponse(Response):
+class SuccessResponse(BaseModel):
     """Model for success response."""
+
     status: Literal["ok"] = Field(default="ok", alias="@status")
 
+    def as_answer(self) -> "StatusAnswer":
+        return StatusAnswer(answer=self)
 
-class ErrorResponse(Response):
+
+class ErrorResponse(BaseModel):
     """Model for error response."""
+
     status: Literal["failed"] = Field(default="failed", alias="@status")
-    error_text: str = Field(alias="@errorText")
+    error_text: str = Field(serialization_alias="@errorText")
+
+    @classmethod
+    def for_error_text(cls, error_text: str) -> "ErrorResponse":
+        """Create an error response for a given error text."""
+        return cls(error_text=error_text)
+    
+    def as_answer(self) -> "StatusAnswer":
+        return StatusAnswer(answer=self)
+
+
+class StatusAnswer(BaseModel):
+    """Base model for responses."""
+
+    answer: Union[SuccessResponse, ErrorResponse, Warning]
+
+
+class TriggerAnswerData(BaseModel):
+    """Model for trigger response data."""
+
+    status: Literal["ok", "failed"] = Field(serialization_alias="@status") 
+    trigger_id: int = Field(serialization_alias="@triggerId")
+    error_text: Optional[str] = Field(default=None, serialization_alias="@errorText")
+
+    @classmethod
+    def ok_for_id(cls, id: int) -> "TriggerAnswerData":
+        """Check if the trigger answer is ok for a given id."""
+        return cls(status="ok", trigger_id=id)
+    
+    @classmethod
+    def failed_for_id(cls, id: int) -> "TriggerAnswerData":
+        """Check if the trigger answer is failed for a given id."""
+        return cls(status="failed", trigger_id=id)
+    
+    def as_answer(self) -> "TriggerAnswer":
+        """Convert the trigger answer data to a trigger answer."""
+        return TriggerAnswer(triggerAnswer=self)
+
+
+class TriggerAnswer(BaseModel):
+    """Model for trigger response."""
+
+    trigger_answer: TriggerAnswerData = Field(alias="triggerAnswer")
+
+
+class ConfigAnswer(BaseModel):
+    """Model for config response."""
+    config: Dict[str, Any] = Field(...)
+
+    def as_answer(self) -> "DataAnswer":
+        return DataAnswer(answer=self)
+
+
+class DatabaseAnswer(BaseModel):
+    """Model for database response."""
+    database: Dict[str, Any] = Field(...)
+
+    def as_answer(self) -> "DataAnswer":
+        return DataAnswer(answer=self)
+
+
+class DateAnswer(BaseModel):
+    """Model for date response."""
+    date: Dict[str, Any] = Field(...)
+
+    def as_answer(self) -> "DataAnswer":
+        return DataAnswer(answer=self)
+
+
+class ImageAnswer(BaseModel):
+    """Model for image response."""
+    image: Dict[str, Any] = Field(...)
+
+    def as_answer(self) -> "DataAnswer":
+        return DataAnswer(answer=self)
+
+
+class InfosAnswer(BaseModel):
+    """Model for infos response."""
+    infos: DeviceInfoResponse = Field(...)
+
+    def as_answer(self) -> "DataAnswer":
+        return DataAnswer(answer=self)
+
+
+class LogAnswer(BaseModel):
+    """Model for log response."""
+    anpr: RecognitionEvent = Field(...)
+
+    def as_answer(self) -> "DataAnswer":
+        return DataAnswer(answer=self)
+
+
+class TracesAnswer(BaseModel):
+    """Model for traces response."""
+    traces: Dict[str, Any] = Field(...)
+
+    def as_answer(self) -> "DataAnswer":
+        return DataAnswer(answer=self)
+
+
+class XSDAnswer(BaseModel):
+    """Model for XSD response."""
+    xsd: str = Field(...)
+
+    def as_answer(self) -> "DataAnswer":
+        return DataAnswer(answer=self)
+
+
+class StreamAnswer(BaseModel):
+    """Model for stream response."""
+    subscriptions: Dict[str, bool] = Field(...)
+
+    def as_answer(self) -> "DataAnswer":
+        return DataAnswer(answer=self)
+
+
+class DataAnswer(BaseModel):
+    """Model for data responses."""
+    answer: Union[ConfigAnswer, DatabaseAnswer, DateAnswer, ImageAnswer, InfosAnswer, LogAnswer, TracesAnswer, XSDAnswer, StreamAnswer]
+
+
+AnswerType = Union[StatusAnswer, TriggerAnswer, DataAnswer]
 
 MessageType = Union[
     GetConfigMessage,

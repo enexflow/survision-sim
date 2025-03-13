@@ -9,6 +9,7 @@ from websockets.legacy.server import WebSocketServerProtocol, serve
 
 from survision_simulator.device_logic import DeviceLogic
 from survision_simulator.data_store import DataStore
+from survision_simulator.models import ErrorResponse, StreamAnswer
 
 
 class SurvisionWebSocketServer:
@@ -85,28 +86,17 @@ class SurvisionWebSocketServer:
                             response = self.device_logic.process_websocket_message(msg_bytes)
                             
                             # Update client subscriptions if needed
-                            if response and "subscriptions" in response:
-                                self.data_store.update_ws_client_subscriptions(websocket, response["subscriptions"])
+                            if response and isinstance(response, StreamAnswer):
+                                self.data_store.update_ws_client_subscriptions(websocket, response.subscriptions)
                             
                             # Send response if needed
                             if response:
-                                await websocket.send(json.dumps(response))
-                        except json.JSONDecodeError:
-                            # Invalid JSON
-                            await websocket.send(json.dumps({
-                                "answer": {
-                                    "@status": "failed",
-                                    "@errorText": "Invalid JSON format"
-                                }
-                            }))
+                                await websocket.send(response.model_dump_json())
                         except Exception as e:
                             # Other errors
-                            await websocket.send(json.dumps({
-                                "answer": {
-                                    "@status": "failed",
-                                    "@errorText": f"Error processing message: {str(e)}"
-                                }
-                            }))
+                            err_type = type(e).__name__
+                            err_msg = str(e)
+                            await websocket.send(ErrorResponse.for_error_text(f"{err_type}: {err_msg}").as_answer().model_dump_json())
                 except websockets.exceptions.ConnectionClosed:
                     pass
                 finally:

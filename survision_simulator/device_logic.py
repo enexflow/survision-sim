@@ -8,12 +8,13 @@ import logging
 from survision_simulator.config_manager import ConfigManager
 from survision_simulator.data_store import DataStore
 from survision_simulator.models import (
-    GetDataBaseModel, GetDateMessage, KeepAliveMessage, SetupMessage, StreamConfig, GetCurrentLogMessage, TriggerOnMessage,
+    AnprInfo, AnswerType, CameraInfo, DeviceInfo, DeviceInfoResponse, ErrorResponse, NetworkInfo, SecurityInfo, StatusAnswer, GetDataBaseModel, GetDateMessage, KeepAliveMessage, SetupMessage, StreamConfig, GetCurrentLogMessage, SuccessResponse, TriggerAnswer, TriggerAnswerData, TriggerOnMessage,
     TriggerOffMessage, LockMessage, SetConfigMessage, EditDatabaseMessage,
-    MessageType, UpdateMessage, parse_message, GetConfigMessage, GetImageMessage, GetInfosMessage,
+    MessageType, UpdateMessage, XSDAnswer, parse_message, GetConfigMessage, GetImageMessage, GetInfosMessage,
     GetLogMessage, GetTracesMessage, GetXSDMessage, OpenBarrierMessage, UnlockMessage,
     ResetConfigMessage, ResetEngineMessage, ResetCountersMessage, AllowSetConfigMessage,
-    ForbidSetConfigMessage, CalibrateZoomFocusMessage, SetEnableStreamsRequest
+    ForbidSetConfigMessage, CalibrateZoomFocusMessage, SetEnableStreamsRequest,
+    ConfigAnswer, DateAnswer, ImageAnswer, InfosAnswer, LogAnswer, TracesAnswer, StreamAnswer, DatabaseAnswer
 )
 
 # Type for message handler functions
@@ -43,12 +44,12 @@ class DeviceLogic:
         self.data_store = data_store
         
         # Active trigger sessions
-        self.active_triggers: Dict[str, Dict[str, Any]] = {}
+        self.active_triggers: Dict[int, Dict[str, Any]] = {}
         
         # Sample image data (base64 encoded)
         self.sample_image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     
-    def process_message(self, message: MessageType) -> Tuple[Dict[str, Any], int]:
+    def process_message(self, message: MessageType) -> Tuple[AnswerType, int]:
         """
         Process an incoming CDK message.
         
@@ -114,7 +115,7 @@ class DeviceLogic:
                 return self._handle_keep_alive(message), 200
         raise NotImplementedError(f"Unknown message type: {type(message).__name__}")
     
-    def process_websocket_message(self, message: bytes) -> Optional[Dict[str, Any]]:
+    def process_websocket_message(self, message: bytes) -> Optional[AnswerType]:
         """
         Process a WebSocket message.
         
@@ -189,7 +190,7 @@ class DeviceLogic:
         success_rate = self.config_manager.get_value("recognitionSuccessRate", 75)
         return random.randint(1, 100) <= success_rate
     
-    def _create_success_response(self) -> Dict[str, Any]:
+    def _create_success_response(self) -> StatusAnswer:
         """
         Create a success response.
         
@@ -197,9 +198,9 @@ class DeviceLogic:
             Success response
         """
         self.logger.info("Creating a success response")
-        return {"answer": {"@status": "ok"}}
+        return SuccessResponse().as_answer()
     
-    def _create_error_response(self, error_text: str) -> Dict[str, Any]:
+    def _create_error_response(self, error_text: str) -> StatusAnswer:
         """
         Create an error response.
         
@@ -210,9 +211,9 @@ class DeviceLogic:
             Error response
         """
         self.logger.warning(f"Creating an error response with message: {error_text}")
-        return {"answer": {"@status": "failed", "@errorText": error_text}}
+        return ErrorResponse.for_error_text(error_text).as_answer()
     
-    def _handle_get_config(self, message: GetConfigMessage) -> Dict[str, Any]:
+    def _handle_get_config(self, message: GetConfigMessage) -> AnswerType:
         """
         Handle getConfig message.
         
@@ -223,51 +224,49 @@ class DeviceLogic:
             Config response
         """
         self.logger.info("Handling GetConfigMessage to retrieve current device configuration")
-        # Create config response based on current configuration
         reliability = self.config_manager.get_value("plateReliability", 80)
         context = self.config_manager.get_value("defaultContext", "F")
         
-        return {
-            "config": {
-                "device": {
-                    "@name": "Simulator Device",
-                    "@installationHeight_cm": "100"
+        config = {
+            "device": {
+                "@name": "Simulator Device",
+                "@installationHeight_cm": "100"
+            },
+            "network": {
+                "interface": {
+                    "@ipAddress": self.config_manager.get_value("ipAddress", "127.0.0.1"),
+                    "@ipMask": "255.255.255.0"
                 },
-                "network": {
-                    "interface": {
-                        "@ipAddress": self.config_manager.get_value("ipAddress", "127.0.0.1"),
-                        "@ipMask": "255.255.255.0"
-                    },
-                    "clp": {
-                        "@port": str(self.config_manager.get_value("wsPort", 10001))
-                    },
-                    "ssws": {
-                        "@httpPort": str(self.config_manager.get_value("httpPort", 8080))
+                "clp": {
+                    "@port": str(self.config_manager.get_value("wsPort", 10001))
+                },
+                "ssws": {
+                    "@httpPort": str(self.config_manager.get_value("httpPort", 8080))
+                }
+            },
+            "cameras": {
+                "camera": {
+                    "anpr": {
+                        "@context": f"{context}>OTHERS",
+                        "@squarePlates": "0",
+                        "@plateReliability": str(reliability)
                     }
-                },
-                "cameras": {
-                    "camera": {
-                        "anpr": {
-                            "@context": f"{context}>OTHERS",
-                            "@squarePlates": "0",
-                            "@plateReliability": str(reliability)
-                        }
-                    }
-                },
-                "database": {
-                    "@enabled": "0",
-                    "@openForAll": "0"
-                },
-                "io": {
-                    "defaultImpulse": {
-                        "@pulseMode": "rising",
-                        "@duration_ms": "500"
-                    }
+                }
+            },
+            "database": {
+                "@enabled": "0",
+                "@openForAll": "0"
+            },
+            "io": {
+                "defaultImpulse": {
+                    "@pulseMode": "rising",
+                    "@duration_ms": "500"
                 }
             }
         }
+        return ConfigAnswer(config=config).as_answer()
     
-    def _handle_get_current_log(self, message: GetCurrentLogMessage) -> Dict[str, Any]:
+    def _handle_get_current_log(self, message: GetCurrentLogMessage) -> AnswerType:
         """
         Handle getCurrentLog message.
         
@@ -278,7 +277,6 @@ class DeviceLogic:
             Current log response
         """
         self.logger.info("Handling GetCurrentLogMessage to retrieve the current log")
-        # Get current recognition or generate a new one
         recognition = self.data_store.get_current_recognition()
         if recognition is None:
             if self.should_recognize_plate():
@@ -286,9 +284,9 @@ class DeviceLogic:
             else:
                 return self._create_error_response("No current recognition")
         
-        return recognition
+        return LogAnswer(anpr=recognition["anpr"]).as_answer()
     
-    def _handle_get_database(self, message: GetDataBaseModel) -> Dict[str, Any]:
+    def _handle_get_database(self, message: GetDataBaseModel) -> AnswerType:
         """
         Handle getDatabase message.
         
@@ -301,16 +299,12 @@ class DeviceLogic:
         self.logger.info("Handling GetDataBaseModel to retrieve database information")
         plates = self.data_store.get_database_plates()
         
-        # Format plates for response
         plate_list = [{"@value": plate} for plate in plates]
+        database = {"plate": plate_list}
         
-        return {
-            "database": {
-                "plate": plate_list
-            }
-        }
+        return DatabaseAnswer(database=database).as_answer()
     
-    def _handle_get_date(self, message: GetDateMessage) -> Dict[str, Any]:
+    def _handle_get_date(self, message: GetDateMessage) -> AnswerType:
         """
         Handle getDate message.
         
@@ -321,13 +315,10 @@ class DeviceLogic:
             Date response
         """
         self.logger.info("Handling GetDateMessage to retrieve the current simulated date")
-        return {
-            "date": {
-                "@date": str(self.data_store.get_simulated_date())
-            }
-        }
+        date = {"@date": str(self.data_store.get_simulated_date())}
+        return DateAnswer(date=date).as_answer()
     
-    def _handle_get_image(self, message: GetImageMessage) -> Dict[str, Any]:
+    def _handle_get_image(self, message: GetImageMessage) -> AnswerType:
         """
         Handle getImage message.
         
@@ -338,14 +329,13 @@ class DeviceLogic:
             Image response
         """
         self.logger.info("Handling GetImageMessage to retrieve the current image data")
-        return {
-            "image": {
-                "@date": str(self.data_store.get_simulated_date()),
-                "jpeg": self.sample_image
-            }
+        image = {
+            "@date": str(self.data_store.get_simulated_date()),
+            "jpeg": self.sample_image
         }
+        return ImageAnswer(image=image).as_answer()
     
-    def _handle_get_infos(self, message: GetInfosMessage) -> Dict[str, Any]:
+    def _handle_get_infos(self, message: GetInfosMessage) -> AnswerType:
         """
         Handle getInfos message.
         
@@ -356,43 +346,35 @@ class DeviceLogic:
             Infos response
         """
         self.logger.info("Handling GetInfosMessage to retrieve device information")
-        return {
-            "infos": {
-                "sensor": {
-                    "@type": "Simulator",
-                    "@firmwareVersion": "1.0",
-                    "@serial": "SIM12345",
-                    "@macAddress": "00:11:22:33:44:55",
-                    "@status": "RUNNING",
-                    "@locked": "1" if self.data_store.is_device_locked() else "0"
-                },
-                "cameras": {
-                    "camera": {
-                        "@id": "0",
-                        "enabledAlgorithms": {
-                            "anpr": None,
-                            "trigger": None
-                        }
-                    }
-                },
-                "network": {
-                    "interfaceWifi": {
-                        "@macAddress": "00:22:55:00:aa:cc",
-                        "@connected": "0"
-                    }
-                },
-                "security": {
-                    "@lockPasswordNeeded": "0",
-                    "@rsaCrypted": "0"
-                },
-                "anpr": {
-                    "@version": "1.0",
-                    "@possibleContexts": "F>OTHERS"
-                }
-            }
-        }
+        infos = DeviceInfoResponse(
+            sensor=DeviceInfo(
+                type="Simulator",
+                firmware_version="1.0",
+                serial="SIM12345",
+                mac_address="00:11:22:33:44:55",
+                status="RUNNING",
+                locked=self.data_store.is_device_locked()
+            ),
+            cameras={"camera": CameraInfo(
+                id="0",
+                enabled_algorithms={"anpr": None, "trigger": None}
+            )},
+            network={"interfaceWifi": NetworkInfo(
+                mac_address="00:22:55:00:aa:cc",
+                connected=True
+            )},
+            security=SecurityInfo(
+                lock_password_needed=False,
+                rsa_crypted=False
+            ),
+            anpr=AnprInfo(
+                version="1.0",
+                possible_contexts="F>OTHERS"
+            )
+        )
+        return InfosAnswer(infos=infos).as_answer()
     
-    def _handle_get_log(self, message: GetLogMessage) -> Dict[str, Any]:
+    def _handle_get_log(self, message: GetLogMessage) -> AnswerType:
         """
         Handle getLog message.
         
@@ -403,7 +385,6 @@ class DeviceLogic:
             Log response
         """
         self.logger.info("Handling GetLogMessage to retrieve log data")
-        # For simplicity, just return the current recognition
         recognition = self.data_store.get_current_recognition()
         if recognition is None:
             if self.should_recognize_plate():
@@ -411,9 +392,9 @@ class DeviceLogic:
             else:
                 return self._create_error_response("No current recognition")
         
-        return recognition
+        return LogAnswer(anpr=recognition["anpr"]).as_answer()
     
-    def _handle_get_traces(self, message: GetTracesMessage) -> Dict[str, Any]:
+    def _handle_get_traces(self, message: GetTracesMessage) -> AnswerType:
         """
         Handle getTraces message.
         
@@ -424,14 +405,13 @@ class DeviceLogic:
             Traces response
         """
         self.logger.info("Handling GetTracesMessage to retrieve trace data")
-        return {
-            "traces": {
-                "currentExecution_old": "BASE64_TRACES_OLD",
-                "currentExecution_current": "BASE64_TRACES_NEW"
-            }
+        traces = {
+            "currentExecution_old": "BASE64_TRACES_OLD",
+            "currentExecution_current": "BASE64_TRACES_NEW"
         }
+        return TracesAnswer(traces=traces).as_answer()
     
-    def _handle_get_xsd(self, message: GetXSDMessage) -> Dict[str, Any]:
+    def _handle_get_xsd(self, message: GetXSDMessage) -> AnswerType:
         """
         Handle getXSD message.
         
@@ -442,15 +422,12 @@ class DeviceLogic:
             XSD response
         """
         self.logger.info("Handling GetXSDMessage to retrieve XSD schema")
-        # Return a base64 encoded XSD (simplified for this implementation)
         xsd_content = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"></xs:schema>"
         xsd_base64 = base64.b64encode(xsd_content.encode()).decode()
         
-        return {
-            "xsd": xsd_base64
-        }
+        return XSDAnswer(xsd=xsd_base64).as_answer()
     
-    def _handle_open_barrier(self, message: OpenBarrierMessage) -> Dict[str, Any]:
+    def _handle_open_barrier(self, message: OpenBarrierMessage) -> StatusAnswer:
         """
         Handle openBarrier message.
         
@@ -464,7 +441,7 @@ class DeviceLogic:
         self.data_store.open_barrier()
         return self._create_success_response()
     
-    def _handle_trigger_on(self, message: TriggerOnMessage) -> Dict[str, Any]:
+    def _handle_trigger_on(self, message: TriggerOnMessage) -> TriggerAnswer:
         """
         Handle triggerOn message.
         
@@ -481,7 +458,7 @@ class DeviceLogic:
         timeout = int(message_data.get("@timeout", "1000")) if message_data else 1000
         
         # Generate trigger ID
-        trigger_id = str(random.randint(1, 10000))
+        trigger_id = random.randint(1, 10000)
         
         # Store trigger session
         self.active_triggers[trigger_id] = {
@@ -490,14 +467,9 @@ class DeviceLogic:
             "startTime": time.time()
         }
         
-        return {
-            "triggerAnswer": {
-                "@status": "ok",
-                "@triggerId": trigger_id
-            }
-        }
+        return TriggerAnswerData.ok_for_id(trigger_id).as_answer()
     
-    def _handle_trigger_off(self, message: TriggerOffMessage) -> Dict[str, Any]:
+    def _handle_trigger_off(self, message: TriggerOffMessage) -> TriggerAnswer:
         """
         Handle triggerOff message.
         
@@ -516,21 +488,11 @@ class DeviceLogic:
         for trigger_id, trigger in list(self.active_triggers.items()):
             if trigger["cameraId"] == camera_id:
                 del self.active_triggers[trigger_id]
-                return {
-                    "triggerAnswer": {
-                        "@status": "ok",
-                        "@triggerId": trigger_id
-                    }
-                }
+                return TriggerAnswerData.ok_for_id(trigger_id).as_answer()
         
-        return {
-            "triggerAnswer": {
-                "@status": "failed",
-                "@errorText": "No active trigger session"
-            }
-        }
+        return TriggerAnswerData.failed_for_id(0).as_answer()
     
-    def _handle_lock(self, message: LockMessage) -> Dict[str, Any]:
+    def _handle_lock(self, message: LockMessage) -> StatusAnswer:
         """
         Handle lock message.
         
@@ -547,7 +509,7 @@ class DeviceLogic:
             return self._create_success_response()
         return self._create_error_response("Failed to lock device")
     
-    def _handle_unlock(self, message: UnlockMessage) -> Dict[str, Any]:
+    def _handle_unlock(self, message: UnlockMessage) -> StatusAnswer:
         """
         Handle unlock message.
         
@@ -562,7 +524,7 @@ class DeviceLogic:
             return self._create_success_response()
         return self._create_error_response("Failed to unlock device")
     
-    def _handle_reset_config(self, message: ResetConfigMessage) -> Dict[str, Any]:
+    def _handle_reset_config(self, message: ResetConfigMessage) -> StatusAnswer:
         """
         Handle resetConfig message.
         
@@ -576,7 +538,7 @@ class DeviceLogic:
         self.config_manager.update_config(ConfigManager.DEFAULT_CONFIG)
         return self._create_success_response()
     
-    def _handle_reset_engine(self, message: ResetEngineMessage) -> Dict[str, Any]:
+    def _handle_reset_engine(self, message: ResetEngineMessage) -> AnswerType:
         """
         Handle resetEngine message.
         
@@ -587,8 +549,7 @@ class DeviceLogic:
             Success response
         """
         self.logger.info("Handling ResetEngineMessage to reset the engine state")
-        # Clear current recognition
-        empty_recognition: Dict[str, Any] = {
+        empty_recognition = {
             "anpr": {
                 "@date": str(self.data_store.get_simulated_date()),
                 "decision": {}
@@ -597,7 +558,7 @@ class DeviceLogic:
         self.data_store.set_current_recognition(empty_recognition)
         return self._create_success_response()
     
-    def _handle_set_config(self, message: SetConfigMessage) -> Dict[str, Any]:
+    def _handle_set_config(self, message: SetConfigMessage) -> AnswerType:
         """
         Handle setConfig message.
         
@@ -615,7 +576,6 @@ class DeviceLogic:
         if not message_data:
             return self._create_error_response("Invalid config data")
         
-        # Extract plate reliability if present
         try:
             config = message_data.get("config", {})
             cameras = config.get("cameras", {})
@@ -630,7 +590,7 @@ class DeviceLogic:
         
         return self._create_success_response()
     
-    def _handle_edit_database(self, message: EditDatabaseMessage) -> Dict[str, Any]:
+    def _handle_edit_database(self, message: EditDatabaseMessage) -> AnswerType:
         """
         Handle editDatabase message.
         
@@ -643,7 +603,6 @@ class DeviceLogic:
         self.logger.info("Handling EditDatabaseMessage to modify the database")
         message_data = message.edit_database
         
-        # Handle add plate
         add_plate = getattr(message_data, 'add_plate', None)
         if add_plate is not None:
             try:
@@ -653,7 +612,6 @@ class DeviceLogic:
             except Exception as e:
                 return self._create_error_response(f"Invalid add plate data: {str(e)}")
         
-        # Handle delete plate
         del_plate = getattr(message_data, 'del_plate', None)
         if del_plate is not None:
             try:
@@ -666,7 +624,7 @@ class DeviceLogic:
         
         return self._create_error_response("Invalid database edit operation")
     
-    def _handle_reset_counters(self, message: ResetCountersMessage) -> Dict[str, Any]:
+    def _handle_reset_counters(self, message: ResetCountersMessage) -> AnswerType:
         """
         Handle resetCounters message.
         
@@ -677,10 +635,9 @@ class DeviceLogic:
             Success response
         """
         self.logger.info("Handling ResetCountersMessage to reset counters")
-        # No counters to reset in this implementation
         return self._create_success_response()
     
-    def _handle_allow_set_config(self, message: AllowSetConfigMessage) -> Dict[str, Any]:
+    def _handle_allow_set_config(self, message: AllowSetConfigMessage) -> AnswerType:
         """
         Handle allowSetConfig message.
         
@@ -694,7 +651,7 @@ class DeviceLogic:
         self.data_store.set_allow_config(True)
         return self._create_success_response()
     
-    def _handle_forbid_set_config(self, message: ForbidSetConfigMessage) -> Dict[str, Any]:
+    def _handle_forbid_set_config(self, message: ForbidSetConfigMessage) -> AnswerType:
         """
         Handle forbidSetConfig message.
         
@@ -708,7 +665,7 @@ class DeviceLogic:
         self.data_store.set_allow_config(False)
         return self._create_success_response()
     
-    def _handle_calibrate_zoom_focus(self, message: CalibrateZoomFocusMessage) -> Dict[str, Any]:
+    def _handle_calibrate_zoom_focus(self, message: CalibrateZoomFocusMessage) -> AnswerType:
         """
         Handle calibrateZoomFocus message.
         
@@ -719,10 +676,9 @@ class DeviceLogic:
             Success response
         """
         self.logger.info("Handling CalibrateZoomFocusMessage to calibrate zoom and focus")
-        # No actual calibration in this implementation
         return self._create_success_response()
     
-    def _handle_set_enable_streams(self, stream_config: StreamConfig) -> Dict[str, Any]:
+    def _handle_set_enable_streams(self, stream_config: StreamConfig) -> AnswerType:
         """
         Handle setEnableStreams message.
         
@@ -730,26 +686,25 @@ class DeviceLogic:
             stream_config: StreamConfig model
             
         Returns:
-            Success response
+            Stream response
         """
         self.logger.info("Handling SetEnableStreamsRequest to configure stream settings")
-        # Convert to dictionary for response
         subscriptions = {
             "configChanges": stream_config.config_changes,
             "infoChanges": stream_config.info_changes,
             "traces": stream_config.traces
         }
         
-        return {"subscriptions": subscriptions}
+        return StreamAnswer(subscriptions=subscriptions).as_answer()
 
-    def _handle_update(self, message: UpdateMessage) -> Dict[str, Any]:
+    def _handle_update(self, message: UpdateMessage) -> AnswerType:
         self.logger.info("Handling UpdateMessage to update device state")
         return self._create_success_response()
 
-    def _handle_setup(self, message: SetupMessage) -> Dict[str, Any]:
+    def _handle_setup(self, message: SetupMessage) -> AnswerType:
         self.logger.info("Handling SetupMessage to perform setup operations")
         return self._create_success_response()
 
-    def _handle_keep_alive(self, message: KeepAliveMessage) -> Dict[str, Any]:
+    def _handle_keep_alive(self, message: KeepAliveMessage) -> AnswerType:
         self.logger.info("Handling KeepAliveMessage to maintain connection")
         return self._create_success_response()
