@@ -58,21 +58,15 @@ function connectWebSocket() {
     
     ws.onopen = () => {
         wsConnected = true;
-        connectionStatusElement.textContent = 'Connected';
-        connectionStatusElement.style.color = 'green';
+        updateConnectionStatus(true);
         logToUI('WebSocket connected');
-        
-        // Enable streams
         enableStreams();
     };
     
     ws.onclose = () => {
         wsConnected = false;
-        connectionStatusElement.textContent = 'Disconnected';
-        connectionStatusElement.style.color = 'red';
+        updateConnectionStatus(false);
         logToUI('WebSocket disconnected');
-        
-        // Try to reconnect after a delay
         setTimeout(connectWebSocket, 5000);
     };
     
@@ -126,8 +120,7 @@ function handleWebSocketMessage(message) {
 function updateDeviceStatus(infos) {
     if (infos.sensor) {
         const locked = infos.sensor['@locked'] === '1';
-        lockStatusElement.textContent = locked ? 'Locked' : 'Unlocked';
-        lockStatusElement.style.color = locked ? 'red' : 'green';
+        updateLockStatus(locked);
     }
 }
 
@@ -263,12 +256,11 @@ function openBarrier() {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.answer && data.answer['@status'] === 'ok') {
-            barrierStatusElement.textContent = 'Open';
-            barrierStatusElement.style.color = 'green';
+        if (data.answer?.status === 'ok') {
+            updateBarrierStatus(true);
             logToUI('Barrier opened');
         } else {
-            logToUI(`Failed to open barrier: ${data.answer ? data.answer['@errorText'] : 'Unknown error'}`);
+            logToUI(`Failed to open barrier: ${data.answer?.errorText ?? 'Unknown error'}`);
         }
     })
     .catch(error => {
@@ -278,10 +270,7 @@ function openBarrier() {
 
 // Close barrier
 function closeBarrier() {
-    // There's no direct closeBarrier API, so we'll simulate it
-    // In a real implementation, this would call the appropriate API
-    barrierStatusElement.textContent = 'Closed';
-    barrierStatusElement.style.color = 'red';
+    updateBarrierStatus(false);
     logToUI('Barrier closed');
 }
 
@@ -335,8 +324,8 @@ function updateIPAddress() {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.infos && data.infos.network && data.infos.network.interface) {
-            const ipAddress = data.infos.network.interface['@ipAddress'];
+        const ipAddress = data.infos?.network?.interface?.['@ipAddress'];
+        if (ipAddress) {
             ipAddressElement.textContent = ipAddress;
         }
     })
@@ -348,13 +337,29 @@ function updateIPAddress() {
 // Log message to UI
 function logToUI(message) {
     const timestamp = new Date().toLocaleTimeString();
-    logDisplayElement.value += `[${timestamp}] ${message}\n`;
-    logDisplayElement.scrollTop = logDisplayElement.scrollHeight;
+    const formattedMessage = `[${timestamp}] ${message}`;
+    logDisplayElement.value = `${formattedMessage}\n${logDisplayElement.value}`;
+    logDisplayElement.scrollTop = 0;
 }
 
 // Clear log
 function clearLog() {
     logDisplayElement.value = '';
+}
+
+function updateConnectionStatus(connected) {
+    connectionStatusElement.textContent = connected ? 'Connected' : 'Disconnected';
+    connectionStatusElement.className = `status-value ${connected ? 'connected' : 'disconnected'}`;
+}
+
+function updateBarrierStatus(isOpen) {
+    barrierStatusElement.textContent = isOpen ? 'Open' : 'Closed';
+    barrierStatusElement.className = `status-value ${isOpen ? 'connected' : 'disconnected'}`;
+}
+
+function updateLockStatus(isLocked) {
+    lockStatusElement.textContent = isLocked ? 'Locked' : 'Unlocked';
+    lockStatusElement.className = `status-value ${isLocked ? 'disconnected' : 'connected'}`;
 }
 
 // Initialize when the page loads

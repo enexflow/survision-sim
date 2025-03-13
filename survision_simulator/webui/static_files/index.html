@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Survision Device Simulator</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -11,82 +12,118 @@
         <header>
             <h1>Survision Device Simulator</h1>
         </header>
-        
-        <div class="status-panel">
-            <h2>Device Status</h2>
+
+        <aside class="status-panel">
             <div class="status-grid">
                 <div class="status-item">
-                    <span class="status-label">IP Address:</span>
+                    <span class="status-label">
+                        <i class="fas fa-network-wired"></i>
+                        IP Address
+                    </span>
                     <span id="ip-address" class="status-value">127.0.0.1</span>
                 </div>
                 <div class="status-item">
-                    <span class="status-label">Connection:</span>
-                    <span id="connection-status" class="status-value">Disconnected</span>
+                    <span class="status-label">
+                        <i class="fas fa-plug"></i>
+                        Connection
+                    </span>
+                    <span id="connection-status" class="status-value disconnected">Disconnected</span>
                 </div>
                 <div class="status-item">
-                    <span class="status-label">Barrier:</span>
+                    <span class="status-label">
+                        <i class="fas fa-door-open"></i>
+                        Barrier
+                    </span>
                     <span id="barrier-status" class="status-value">Closed</span>
                 </div>
                 <div class="status-item">
-                    <span class="status-label">Lock:</span>
+                    <span class="status-label">
+                        <i class="fas fa-lock"></i>
+                        Lock
+                    </span>
                     <span id="lock-status" class="status-value">Unlocked</span>
                 </div>
             </div>
-        </div>
-        
-        <div class="control-panel">
-            <h2>Plate Recognition</h2>
-            <div class="control-group">
-                <label for="plate-input">License Plate:</label>
-                <input type="text" id="plate-input" placeholder="Enter license plate (e.g., AA123AA)">
-                <button id="trigger-recognition">Trigger Recognition</button>
-            </div>
-            
-            <h2>Barrier Control</h2>
-            <div class="control-group">
-                <button id="open-barrier">Open Barrier</button>
-                <button id="close-barrier">Close Barrier</button>
-            </div>
-            
-            <h2>Configuration</h2>
-            <div class="control-group">
-                <label for="recognition-rate">Recognition Success Rate (%):</label>
-                <input type="range" id="recognition-rate" min="0" max="100" value="75">
-                <span id="recognition-rate-value">75</span>
-            </div>
-            
-            <div class="control-group">
-                <label for="context-select">Default Context:</label>
-                <select id="context-select">
-                    <option value="F">France (F)</option>
-                    <option value="GB">Great Britain (GB)</option>
-                    <option value="US">United States (US)</option>
-                    <option value="DE">Germany (DE)</option>
-                    <option value="ES">Spain (ES)</option>
-                    <option value="IT">Italy (IT)</option>
-                </select>
-            </div>
-            
-            <div class="control-group">
-                <label for="plate-reliability">Plate Reliability (0-100):</label>
-                <input type="range" id="plate-reliability" min="0" max="100" value="80">
-                <span id="plate-reliability-value">80</span>
-            </div>
-            
-            <div class="control-group">
-                <button id="save-config">Save Configuration</button>
-            </div>
-        </div>
-        
-        <div class="log-panel">
-            <h2>Event Log</h2>
-            <div class="log-container">
-                <textarea id="log-display" readonly></textarea>
-            </div>
-            <button id="clear-log">Clear Log</button>
-        </div>
+        </aside>
+
+        <main class="control-panel">
+            <section class="control-group">
+                <h2><i class="fas fa-camera"></i> Plate Recognition</h2>
+                <div class="form-group">
+                    <label for="plate-input">License Plate</label>
+                    <div class="input-group">
+                        <input type="text" id="plate-input" placeholder="Enter license plate (e.g., AA123AA)">
+                        <button id="trigger-recognition">
+                            <i class="fas fa-camera"></i>
+                            Recognize
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="control-group">
+                <h2><i class="fas fa-door-open"></i> Barrier Control</h2>
+                <div class="button-group">
+                    <button id="open-barrier">
+                        <i class="fas fa-door-open"></i>
+                        Open Barrier
+                    </button>
+                    <button id="close-barrier">
+                        <i class="fas fa-door-closed"></i>
+                        Close Barrier
+                    </button>
+                </div>
+            </section>
+
+            <section class="control-group">
+                <h2><i class="fas fa-sliders-h"></i> Configuration</h2>
+                <div class="form-group">
+                    <label for="recognition-rate">Recognition Success Rate</label>
+                    <div class="range-group">
+                        <input type="range" id="recognition-rate" min="0" max="100" value="75">
+                        <span id="recognition-rate-value">75%</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="context-select">Default Context</label>
+                    <select id="context-select">
+                        <option value="F">France (F)</option>
+                        <option value="GB">Great Britain (GB)</option>
+                        <option value="US">United States (US)</option>
+                        <option value="DE">Germany (DE)</option>
+                        <option value="ES">Spain (ES)</option>
+                        <option value="IT">Italy (IT)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="plate-reliability">Plate Reliability</label>
+                    <div class="range-group">
+                        <input type="range" id="plate-reliability" min="0" max="100" value="80">
+                        <span id="plate-reliability-value">80%</span>
+                    </div>
+                </div>
+
+                <button id="save-config">
+                    <i class="fas fa-save"></i>
+                    Save Configuration
+                </button>
+            </section>
+
+            <section class="log-panel">
+                <h2><i class="fas fa-terminal"></i> Event Log</h2>
+                <div class="log-container">
+                    <textarea id="log-display" readonly></textarea>
+                </div>
+                <button id="clear-log">
+                    <i class="fas fa-trash"></i>
+                    Clear Log
+                </button>
+            </section>
+        </main>
     </div>
-    
+
     <script src="script.js"></script>
 </body>
 </html>
